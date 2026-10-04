@@ -1,0 +1,42 @@
+# ─── Gizli ────────────────────────────────────────────────
+.env
+.env.yedek*
+.env.ornek
+
+# ─── Python ───────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ─── Tarayici profilleri (buyuk, makineye ozel, cerez tasir) ──
+brave_oto_profile*/
+brave_test_profile/
+camoufox_*/
+px_proxy_auth_ext/
+chromedriver.exe
+
+# ─── Veritabani + bot durumu ──────────────────────────────
+*.db
+*.db-wal
+*.db-shm
+oto_gorulmus.json
+oto_bot.lock
+cdp_port.txt
+
+# ─── Log / cikti / dump ───────────────────────────────────
+*.log
+*.log.*
+*.png
+*.csv
+*.zip
+oto_bot_run*.log
+px_gec_out.txt
+veri_raporu.txt
+konsol_cikti.txt
+faz*_dump/
+duvar_dump/
+
+# ─── Yerel arsiv (eski deneme dosyalari) ──────────────────
+_arsiv/

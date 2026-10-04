@@ -1,0 +1,9 @@
+undetected-chromedriver>=3.5.5
+selenium>=4.15.0
+beautifulsoup4>=4.12.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# px_gec.py (PerimeterX gecici) — Windows'a ozel
+pywin32>=306
+websocket-client>=1.7.0
