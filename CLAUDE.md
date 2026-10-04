@@ -1,7 +1,42 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 15.09.2026 — Faz 1 orta, veri hijyeni tamam.
+**Son güncelleme:** 04.10.2026 — repo temizlendi, sade toplayıcı doğrulandı.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 04.10.2026 — Sade toplayıcı + repo temizliği
+
+- **`oto_tarama.py` eklendi (yeni, sade toplayıcı).** PC bileşenleri botunun
+  (`apex_predator/sahibinden_bot.py`) kanıtlanmış tarama çekirdeğinin otomobil
+  sürümü. SADECE tarar + `oto_tarama.db`'ye yazar — kelepir/skorlama/Telegram
+  YOK, ilan fotosu da ÇEKİLMİYOR. `oto_bot.py`'ye dokunulmadı, ayrı DB kullanır.
+  - **Anonim mod** (`user_data_dir` verilmiyor) + cache-bust (`&_=<ms>`) +
+    `Network.setCacheDisabled` + resource-blocking + `page_load_strategy=eager`.
+  - **Sabit tur periyodu:** `bekleme = max(3, hedef - geçen)`, hedef
+    `uniform(50,75)`s — mola tarama süresinin ÜSTÜNE eklenmiyor.
+  - `uc.Chrome.__del__ = lambda self: None` — uc'nin kapanışta bastığı
+    `WinError 6` traceback'i susturuldu (iş bittikten sonra, crash değil).
+  - **ÖLÇÜM (10 tur):** tur başına 21-22 ilan, yükleme ~0.8s, 252 ilan DB'ye
+    yazıldı, **PX/CF hiç gelmedi.** Temizlik sonrası 1 tur tekrar doğrulandı.
+- **`px_gec.py` artık portu kendi buluyor.** Sabit `PORT = 59964` kaldırıldı →
+  `--port` argümanı > `cdp_port.txt` (bot yazıyor) > 59964 sırası. Bot açılışta
+  uc'nin seçtiği gerçek debug portunu `cdp_port.txt`'ye yazıyor.
+  - **Eksik bağımlılık bulundu:** `pywin32` + `websocket-client` Python 3.12'de
+    kurulu DEĞİLDİ — `px_gec.py` sessizce döngüde hata basıyordu. Kuruldu ve
+    `requirements.txt`'e eklendi.
+- **Klasör git'e hazırlandı (ortak geliştirme için).** 141 gereksiz öğe
+  (`_*.py` deneme dosyaları, `oto_bot_run*.log`, eski profiller, camoufox
+  klasörleri, dump'lar, ekran görüntüleri, `.env.ornek`/`.env.yedek_*`)
+  **silinmedi**, `_arsiv/` altına taşındı ve gitignore'landı.
+  - Çalışma durumu yerinde kaldı: `oto_hafiza.db*`, `oto_gorulmus.json`,
+    `oto.log`, `brave_oto_profile_login/`, `brave_oto_profile_v2/`, `.env`.
+  - `git init` + ilk commit = **17 dosya / 0.36 MB** (kod + docs). `.env`,
+    veritabanı, profil, log repoya GİRMEDİ.
+  - `README.md` geliştirici için yeniden yazıldı; `docs/` eklendi
+    (`perimeterx_notu.md`, `elenen_siklar.md`, `px_gec_notu.md`).
+    Proxy şifreleri/hesap adı docs'tan temizlendi (`<proxy_host>`).
+  - `baslat_tarama.bat` eklendi (sade toplayıcı için tek tık, `MAX_TUR` env).
 
 ---
 
