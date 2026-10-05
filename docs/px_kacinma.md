@@ -209,3 +209,66 @@ bu kosulsuz, env gerektirmiyor.
 | `ANONIM_MOD=1` | `_px3`/`_pxvid` damgasi birikmez | giris ve cf_clearance restart'lar arasi tasinmaz |
 
 `.env`'e ikisi de yazildi (05.10.2026).
+
+---
+
+## 05.10.2026 23:50 — COZUM: SOGUK GIRIS sorunuydu
+
+### Kanit zinciri
+
+1. **22:43** — uc oturumu, temiz anonim profil, dogrudan
+   `/otomobil?sorting=date_desc&_=<ms>` → `PX_BLOCK`.
+2. **23:08** — ayni IP, `/masaustu-donanim` → 21 ilan (temiz).
+   → damga tum IP'yi kapsamiyor.
+3. **23:3x** — KULLANICI ELLE kendi Brave'inde `/otomobil`: ana sayfadan
+   girip tarihe gore siralayip ilan detaylarina girdi → **hic PX yok**.
+   → damga IP'de DEGIL.
+4. **Parmak izi denetimi** (`arac_parmak_izi.py`, HTTPS sayfada):
+   `navigator.webdriver=False`, `cdc_` degiskeni yok, `plugins=5`,
+   native imzalar yamasiz, `userAgentData` normal (Chromium/154 | Brave/154),
+   `Notification.permission=default`, CDP izi yok.
+   → bariz otomasyon imzasi YOK.
+5. **23:50** — tek degisiklik: oturum **ana sayfadan** basladi (4-9 sn
+   bekleme + hafif scroll, 29 cerez alindi), sonra kategoriye gecildi.
+   Ayrica gorseller indirildi, cache acik, cache-bust parametresi yok.
+   → **21 ilan, 0.87 sn, PX YOK.**
+
+### Teshis
+
+Sorun ne IP ne parmak izi: **GIRIS BICIMI**. Sifir gecmisli yepyeni bir
+tarayicinin ilk hareketi olarak tarihe-gore-sirali derin kategori sayfasina
+dalmak, ustune hic gorsel indirmemek — insan trafiginde gorulmeyen bir desen.
+
+Sabah 11 turun temiz gecmesinin aciklamasi da bu: **ILK tur** cerezi kapmis,
+kalan 10 tur AYNI oturumu kullanmis. Oturum basina bir soguk giris vardi.
+Oturum tazeleme/challenge sonrasi her yeni oturum ayni soguk girisi
+tekrarlayinca blok kalicilasti.
+
+### Uygulanan: ISINMA
+
+`oto_tarama.py` → `isin(driver)`: her YENI oturumda (acilis, oturum
+tazeleme, challenge sonrasi) once `sahibinden.com` ana sayfasi acilir,
+4-9 sn beklenir, 1-3 hafif scroll yapilir; cerezler dogal yolla alinir;
+sonra kategoriye gecilir. `ISINMA=0` ile kapatilir.
+
+### Yeni anahtarlar
+
+| Env | Varsayilan | Ne yapar |
+|---|---|---|
+| `ISINMA` | 1 | Oturum basinda ana sayfadan gir, cerez kap |
+| `CACHE_BUST` | 1 | URL'e `&_=<ms>` ekle (elle gezen insanda yok) |
+| `GORSEL_BLOK` | 1 (attach'ta 0) | Gorsel/font byte'larini engelle |
+| `CACHE_DISABLED` | 1 (attach'ta 0) | Tarayici cache'ini kapat |
+| `CDP_PORT` | bos | ELLE isitilmis Brave'e baglan (yeni tarayici acma) |
+
+**Henuz ayristirilmadi:** 23:50 denemesinde isinma + cache-bust kapali +
+gorsel acik + cache acik AYNI ANDA degisti. Hangisinin ne kadar katki
+yaptigi bilinmiyor. Siradaki olcum: isinma ACIK + cache-bust ACIK (gecikme
+sorunu icin cache-bust lazim) → yine temiz mi?
+
+### Attach modu (yedek plan)
+
+`baslat_brave_debug.bat` ayri bir profille (`brave_insan_profile`) debug
+portlu Brave acar; kullanici 1-2 dakika normal gezer; sonra
+`CDP_PORT=9222` ile bot O tarayiciya baglanir, kendi oturumunu hic kurmaz.
+Isinma yetmezse kullanilacak yol budur.

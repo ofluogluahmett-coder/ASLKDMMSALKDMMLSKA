@@ -88,10 +88,38 @@ ESZAMANLI_IZIN = os.getenv("ESZAMANLI_IZIN", "0") == "1"
 KILIT_DOSYA     = ROOT / "oto_tarama.lock"
 OTO_BOT_KILIDI  = ROOT / "oto_bot.lock"
 
+# --- 6) INSAN GIBI GIRIS (05.10.2026 gece bulgusu) ----------------------
+# KANIT: kullanicinin ELLE actigi Brave, AYNI IP ve AYNI DAKIKADA /otomobil'de
+# serbest geziyor (siralama + ilan detayina girme, hic PX yok); bizim uc
+# oturumu tek duz URL isteginde "denied" yiyor. Parmak izi denetimi
+# (arac_parmak_izi.py) TEMIZ cikti: navigator.webdriver=False, cdc_ yok,
+# plugins dolu, native imzalar yamasiz, userAgentData normal. Yani fark
+# parmak izinde DEGIL, GIRIS BICIMINDE:
+#   - sifir gecmisli yepyeni profil (hic cerez, hic gezinme gecmisi)
+#   - dogrudan derin kategori URL'si (ana sayfadan gelmiyor, referer yok)
+#   - uzerine cache-bust parametresi
+#   - tek bir gorsel bile indirmiyor
+# Insan boyle gezmez. Sabah 11 turun temiz gecmesi de bunu destekliyor: ILK
+# tur cerezi kapmis, kalan 10 tur AYNI oturumu kullanmis. Simdi her oturum
+# sifirdan soguk giris yapiyor.
+#
+# ISINMA=1      -> oturum basinda once ANA SAYFA acilir, insan temposunda
+#                  beklenir, hafif scroll yapilir; cerezler (_px, cf_clearance)
+#                  dogal yolla alinir; SONRA kategoriye gecilir.
+# CACHE_BUST=0  -> URL'e '&_=<ms>' eklenmez (elle gezen insanda bu parametre
+#                  yok). Bedeli: origin bayat liste dondurebilir.
+# CDP_PORT=9222 -> yeni tarayici ACILMAZ; ELLE acilmis (cerezi oturmus,
+#                  guvenilir) Brave'e baglanilir.
+ISINMA      = os.getenv("ISINMA", "1") != "0"
+ISINMA_URL  = "https://www.sahibinden.com/"
+CACHE_BUST  = os.getenv("CACHE_BUST", "1") != "0"
+CDP_PORT    = os.getenv("CDP_PORT", "").strip()
+
 # HIZ: gorsel/font/tracker byte'larini engelle (ilan verisi DOM'da kalir).
-# GORSEL_BLOK=0 ile kapatilabilir — "hic gorsel cekmeyen istemci" imzasi
-# PX'e anormal gorunuyor mu? henuz olculmedi, test icin acik kapi.
-GORSEL_BLOK = os.getenv("GORSEL_BLOK", "1") != "0"
+# DIKKAT: "hic gorsel indirmeyen istemci" insan-disi bir desen. Attach
+# modunda (gercek tarayici) varsayilan KAPALI — o tarayici normal gozukmeli.
+GORSEL_BLOK    = os.getenv("GORSEL_BLOK", "0" if CDP_PORT else "1") != "0"
+CACHE_DISABLED = os.getenv("CACHE_DISABLED", "0" if CDP_PORT else "1") != "0"
 BLOCK_URLS = [
     "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.svg",
     "*shbdn.com/photos*", "*.woff", "*.woff2", "*.ttf",
@@ -229,7 +257,60 @@ def _metin(item, secici):
         return ""
 
 
+def _port_dinliyor(p):
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.7)
+    try:
+        return s.connect_ex(("127.0.0.1", int(p))) == 0
+    finally:
+        s.close()
+
+
+def isin(driver, sessiz=False):
+    """Oturumu insan gibi baslat: ONCE ana sayfa, bekle, hafif scroll.
+
+    Amac cerezleri (_px, cf_clearance) dogal yolla almak ve kategoriye
+    "ana sayfadan gelen" bir oturumla girmek. Soguk giris (dogrudan derin
+    kategori URL'si) 05.10.2026 gecesi tek istekte blok yedi."""
+    if not ISINMA:
+        return
+    try:
+        driver.get(ISINMA_URL)
+        time.sleep(random.uniform(4, 9))         # goz gezdirme
+        for _ in range(random.randint(1, 3)):    # hafif scroll
+            driver.execute_script(
+                "window.scrollBy(0, %d);" % random.randint(250, 700))
+            time.sleep(random.uniform(0.6, 1.6))
+        time.sleep(random.uniform(1.5, 3.5))
+        if not sessiz:
+            print("ISINMA: ana sayfa gezildi, cerezler alindi "
+                  "(%d cerez)" % len(driver.get_cookies()))
+    except Exception as e:
+        print("[UYARI] isinma yapilamadi: %s" % e)
+
+
 def surucu_olustur(sessiz=False):
+    # --- ATTACH MODU: yeni tarayici acma, ELLE acilmis olana baglan ---
+    # Gerekce: kullanicinin kendi Brave'i ayni IP'de /otomobil'de serbest
+    # geziyor. O tarayicinin kimligi ve cerezleri guvenilir durumda; biz
+    # kendi soguk oturumumuzu kurmak yerine onu kullanabiliriz.
+    if CDP_PORT:
+        from selenium import webdriver as _wd
+        if not _port_dinliyor(CDP_PORT):
+            print("[DUR] 127.0.0.1:%s dinlenmiyor — once Brave'i debug portuyla"
+                  % CDP_PORT)
+            print("      ac: baslat_brave_debug.bat")
+            raise SystemExit(5)
+        _o = _wd.ChromeOptions()
+        _o.add_experimental_option("debuggerAddress", "127.0.0.1:%s" % CDP_PORT)
+        _o.page_load_strategy = "eager"
+        driver = _wd.Chrome(options=_o)
+        if not sessiz:
+            print("ATTACH: 127.0.0.1:%s — elle acilmis Brave'e baglanildi "
+                  "(uc launch YOK, cerezler o tarayicinin)" % CDP_PORT)
+        return driver
+
     options = uc.ChromeOptions()
     options.add_argument("--disable-dev-shm-usage")
     options.page_load_strategy = "eager"
@@ -247,13 +328,17 @@ def surucu_olustur(sessiz=False):
         no_sandbox=False,
     )
     try:
-        driver.execute_cdp_cmd("Network.enable", {})
+        if GORSEL_BLOK or CACHE_DISABLED:
+            driver.execute_cdp_cmd("Network.enable", {})
         if GORSEL_BLOK:
             driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": BLOCK_URLS})
-        driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+        if CACHE_DISABLED:
+            driver.execute_cdp_cmd("Network.setCacheDisabled",
+                                   {"cacheDisabled": True})
         if not sessiz:
-            print("CDP: cache-disabled + gorsel_blok="
-                  f"{'acik' if GORSEL_BLOK else 'KAPALI'}")
+            print("CDP: gorsel_blok=%s | cache_disabled=%s"
+                  % ("acik" if GORSEL_BLOK else "KAPALI",
+                     "acik" if CACHE_DISABLED else "KAPALI"))
     except Exception as e:
         print(f"[UYARI] CDP setup kurulamadi: {e}")
 
@@ -266,6 +351,7 @@ def surucu_olustur(sessiz=False):
             print(f"CDP debug adresi: {adres}  (cdp_port.txt yazildi)")
     except Exception as e:
         print(f"[UYARI] debug portu okunamadi: {e}")
+    isin(driver, sessiz)       # soguk giris yapma: once ana sayfa
     return driver
 
 
@@ -323,6 +409,10 @@ def pusuya_yat():
     print(f"PX kacinma: parametre_kontrol={'acik' if PARAMETRE_KONTROL else 'KAPALI'} | "
           f"oturum_tazeleme={OTURUM_TAZELE_DK:.0f}dk | gece x{GECE_CARPANI} | "
           f"challenge_molasi={CHALLENGE_MOLA}")
+    print("Insan modu: isinma=%s | cache_bust=%s | mod=%s"
+          % ("acik" if ISINMA else "KAPALI",
+             "acik" if CACHE_BUST else "KAPALI",
+             ("ATTACH:" + CDP_PORT) if CDP_PORT else "uc-launch"))
     print(f"URL: {ANA_URL}")
 
     tur = 0
@@ -351,9 +441,12 @@ def pusuya_yat():
             gorulmus.clear()
 
         try:
-            # Cache-buster: her tur farkli URL -> origin taze cevaba zorlanir
+            # Cache-buster: her tur farkli URL -> origin taze cevaba zorlanir.
+            # CACHE_BUST=0 ise eklenmez (elle gezen insanda bu parametre yok).
             t0 = time.time()
-            driver.get(f"{ANA_URL}&_={int(time.time() * 1000)}")
+            _url = (f"{ANA_URL}&_={int(time.time() * 1000)}" if CACHE_BUST
+                    else ANA_URL)
+            driver.get(_url)
             _istek += 1
             _sayfa_bekle(driver, timeout=12)
             items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
