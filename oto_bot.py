@@ -100,6 +100,14 @@ SAYFA_DERINLIK_PLANI = [
 # tarama artik SAYFA_DERINLIK_PLANI'na gore yapiliyor, sabit range degil.
 MAX_SAYFA    = int(os.getenv("MAX_SAYFA", str(len(SAYFA_DERINLIK_PLANI))))
 
+# 05.10.2026 — TEK_SAYFA=1: derinlik plani SADECE 1. sayfaya iner (duz URL,
+# hic pagingOffset yok). Tur basina istek 2-4'ten 1'e duser ve bot yalnizca
+# olculmus-temiz URL bicimini kullanir. Bedeli: yogun saatte 1. sayfa
+# ~60 sn'de tamamen yenilendigi icin ilan kacabilir. PX surekli geliyorsa
+# ilk denenecek ayar budur.
+if os.getenv("TEK_SAYFA", "0") == "1":
+    SAYFA_DERINLIK_PLANI = [(0, 1)]
+
 RENDER_BEKLEME_TAVANI = 10
 RENDER_SETTLE_MIN     = 2.5
 RENDER_SETTLE_MAX     = 4.0
@@ -506,7 +514,19 @@ def _jitter(low, high):
 
 
 def _sayfa_url(offset):
-    """offset: pagingOffset degeri (0, 20, 40, ...) — dogrudan, sayfa indeksi degil."""
+    """offset: pagingOffset degeri (0, 20, 40, ...) — dogrudan, sayfa indeksi degil.
+
+    05.10.2026 — OFFSET=0 ARTIK PARAMETRE EKLEMIYOR (duz URL).
+    OLCUM: tanidik olmayan sayfalama parametresi (pagingSize=50) TEK ISTEKTE
+    IP'yi yakti ("Access to this page has been denied", 3 saat sonra hala
+    bloklu). Duz URL (?sorting=date_desc) ise 10 tur boyunca temiz dondu.
+    pagingOffset=0 ile duz URL AYNI sayfayi verir — ama temiz oldugu OLCULEN
+    bicim duz URL. Gereksiz parametre = bedava risk, o yuzden atildi.
+    pagingOffset>0'in zararli olup olmadigi HENUZ OLCULMEDI (bkz.
+    docs/px_kacinma.md); zararli cikarsa TEK_SAYFA=1 ile derin sayfalar kapanir.
+    """
+    if not offset:
+        return OTO_URL_BASE
     return f"{OTO_URL_BASE}&pagingOffset={offset}"
 
 

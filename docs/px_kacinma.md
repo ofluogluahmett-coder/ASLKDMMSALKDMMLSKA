@@ -97,3 +97,61 @@ Bilincli gecmek icin: `ESZAMANLI_IZIN=1`.
 
 Test kurali: **tek istek, sonra 30 dk sessizlik.** Blok gelirse o parametre
 yanmistir, listeye asla girmez.
+
+---
+
+## 05.10.2026 gecesi — blogun OMRU olculdu (kotu haber)
+
+`pagingSize` denemesi IP'yi 19:40 civari yakti. **22:42'de tek istekle
+kontrol: hala `PX_BLOCK`.** Ayni IP ayni gun 19:11-19:27 arasi 11 tur
+sorunsuz donmustu.
+
+**Sonuc: bu bir hiz limiti degil, kalici IP damgasi.** Saatlerle olculuyor.
+Pratik anlami: tek bir yanlis parametre, o IP'yi yarim gun kaybettirir.
+Bu yuzden parametre beyaz listesi (`oto_tarama.py`) bir konfor degil, zorunluluk.
+
+### Olcum aleti: `arac_px_olcum.py`
+
+Parametre denemeleri artik elle degil bu aletle yapilir:
+
+```
+py -3.12 arac_px_olcum.py                      # kontrol: duz URL
+py -3.12 arac_px_olcum.py "&pagingOffset=20"   # parametre dene
+py -3.12 arac_px_olcum.py --yol /masaustu-donanim
+```
+
+Alet TEK istek atar, temiz anonim profil kullanir, hukmu
+(`TEMIZ`/`PX_BLOCK`/`CF`/`BOS`) `px_olcum.log`'a yazar ve **son olcumden
+20 dk gecmeden calismayi reddeder**. Disiplin insanin hafizasina
+birakilmaz, alete gomulur.
+
+### oto_bot.py'de bulunan sey — muhtemel kok neden
+
+`_sayfa_url(0)` ILK SAYFAYI BILE `&pagingOffset=0` ile istiyordu. Yani
+oto_bot'un attigi **hicbir istek duz URL degildi** — oto_tarama'nin 10 tur
+temiz dondugu URL bicimini hic kullanmiyor. `pagingSize`'in tek istekte
+oldurdugunu gorduktene gore bu ciddi bir suphe.
+
+**Yapilan iki degisiklik (davranisi bozmadan):**
+
+1. `_sayfa_url(0)` artik **duz URL** donduruyor (parametre eklemiyor).
+   offset=0 ile duz URL ayni sayfadir; ama temiz oldugu OLCULEN bicim duz URL.
+2. `TEK_SAYFA=1` env'i eklendi → derinlik plani `[(0,1)]`'e iner: tur basina
+   istek 2-4'ten 1'e duser ve bot yalnizca olculmus-temiz bicimi kullanir.
+   Bedeli: yogun saatte 1. sayfa ~60 sn'de tamamen yenildigi icin ilan
+   kacabilir. **PX surekli geliyorsa ilk denenecek ayar budur.**
+
+`pagingOffset>0` zararli mi? IP bloklu oldugu icin HENUZ OLCULEMEDI. Temiz
+IP'de ilk yapilacak test bu.
+
+### Geriye kalan buyuk degisken: CIKIS IP'si
+
+Client tarafinda yapilacaklar bitmek uzere. Olculenler:
+
+- Ayni IP, ayni kod, ayni saat: duz URL temiz → `pagingSize` → IP yarim gun yanik.
+- Taze profil yanmis IP'yi KURTARMIYOR.
+- Aydin'in botu (rakip) hicbir anti-detection kullanmiyor ve PX yemiyor
+  → fark imzada degil, oturum/parametre hijyeninde ve IP itibarinda.
+
+Siradaki kesin test (bedava): **telefon hotspot'u** ile ayni tek istekli
+kontrol. Donerse sorun cikis IP'sindedir ve calisan bir yol elde edilir.
