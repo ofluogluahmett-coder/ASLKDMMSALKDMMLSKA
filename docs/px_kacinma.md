@@ -1,0 +1,99 @@
+# PX'e denk gelmeme stratejisi
+
+Bu dosya PX'i **cozmekle** ilgili degil (o is `px_gec.py`). Burada tek soru
+var: **PX ekranini hic gormemek icin ne yapilir?**
+
+Temel kabul: PX bir duvar degil, bir **skor**. Skoru yukselten sey istek
+*hacmi* degil, **anormallik**. O yuzden "daha yavas tara" tek basina cozum
+degil — anormal davranisi yavas yapmak da yakalanir.
+
+---
+
+## Olculmus bulgular (tarih sirasina gore)
+
+| Ne denendi | Sonuc | Kanit |
+|---|---|---|
+| Kalici profil (haftalarca bot) | **PX magneti** | PC botunda CF spam'i; anonim moda gecince bitti |
+| Anonim profil (`user_data_dir` yok) | **Temiz** | `/otomobil` 10 tur, 252 ilan, 0 challenge |
+| `?sorting=date_desc` | Temiz | ayni 10 tur |
+| `&_=<ms>` cache-bust | Temiz | ayni 10 tur (jQuery gelenegi, sunucu yoksayiyor) |
+| `&pagingSize=50` | **TEK ISTEKTE HARD BLOCK** | 05.10.2026: ilk istekte "Access to this page has been denied" |
+| `&pagingSize=100` | Ayni | ayni test |
+| Blok sonrasi taze profil | **Kurtarmadi** | yeni anonim oturum + duz URL yine bloklu → damga IP/oturum katmaninda |
+| `pagingOffset=20`, `/otomobil/2` | **Olculemedi** | test IP'si zaten blokluydu, kontrol adimi da bloklu geldi → tekrar edilecek |
+| Mobil site (`m.sahibinden.com`) vasita | Hard block | bkz. [elenen_siklar.md](elenen_siklar.md) |
+
+**En onemli ders:** bir parametre ya tamamen zararsizdir ya da **tek istekte**
+IP'yi yakar. Kademeli uyari yok. O yuzden yeni parametre denemesi asla botun
+icinde, 10 turluk kosuda yapilmaz — elle, tek istekle, gozunun onunde yapilir.
+
+---
+
+## Kodda uygulanan 5 onlem (`oto_tarama.py`)
+
+### 1. Parametre disiplini (en onemli)
+`GUVENLI_PARAMETRELER = {"sorting", "_"}`. Bot acilista `ANA_URL`'in
+parametrelerini bu listeye karsi dogrular; listede olmayan bir parametre
+varsa **hic baslamaz** (`exit 2`), tarayici bile acilmaz. Ortak gelistirmede
+birinin `pagingSize` ekleyip IP'yi yakmasini onler.
+Bilincli gecmek icin: `PARAMETRE_KONTROL=0`.
+
+### 2. Adaptif tempo
+Turun TOPLAM suresi hedeflenir (`bekleme = max(3, hedef - gecen)`), hedef:
+
+```
+taban      = uniform(50, 75) sn
+gece 02-07 = x2.5                 # ilan akisi durur, ayni tempo bedava risk
+bos tur    = x1.35^n (n<=4)       # yeni ilan gelmiyorsa kategori sogumus
+temkinli   = x2.0                 # challenge sonrasi 12 tur
+tavan      = 420 sn
+```
+
+Mantik: **risk butcesini ilan akisinin oldugu yere harca.** Gece 03:00'te
+dakikada bir istek atmak sifir getiri, tam risk.
+
+### 3. Challenge devre kesici
+Challenge gorulunce **cozulmeye calisilmaz**. Damgali oturumda atilan her
+istek damgayi tazeler. Yapilan:
+
+1. Oturum terk edilir (`driver.quit()`),
+2. Katlanan mola: 5 dk → 15 dk → 30 dk → 60 dk (ust uste challenge sayisina gore),
+3. Temiz gecici profille yeniden acilir,
+4. 12 tur boyunca **temkinli** (periyot x2) gidilir, sonra normale doner.
+
+### 4. Oturum tazeleme
+`OTURUM_TAZELE_DK=90` — 90 dakikada bir driver kapatilip temiz profille
+aciliyor (arada 20-40 sn bosluk). Anonim modda bu bedava: hicbir sey
+kaybedilmiyor, `_px3`/`_pxvid` birikmesi sifirlaniyor. `0` = kapali.
+
+### 5. Es zamanlilik kilidi
+Ayni IP'den es zamanli iki oturum, tek oturumdan daha anormaldir.
+`oto_tarama.py` kendi `oto_tarama.lock` dosyasini tutar ve `oto_bot.lock`
+kilitliyse (yani `oto_bot.py` calisiyorsa) **baslamaz**.
+Bilincli gecmek icin: `ESZAMANLI_IZIN=1`.
+
+---
+
+## Yapilmayanlar ve nedenleri
+
+- **Yavaslatma tek basina cozum sayilmadi.** Olcum: `/otomobil` sayfa 1'i
+  ~60 saniyede neredeyse tamamen yeniliyor (`ilan=21, yeni=20`). Yani
+  periyodu uzatmak dogrudan **ilan kaciraktir**. Log'a bu durum icin uyari
+  basiliyor: `[sayfa tam dondu: ilan kaciriyor olabilirsin]`.
+- **Daha fazla fingerprint oyunu yok.** Aydin'in botu (rakip, ayni yontem)
+  hicbir anti-detection kullanmiyor ve PX yemiyor → sorun imza degil,
+  oturum/parametre hijyeni.
+- **Proxy yok.** Olculdu, faydasi gosterilemedi; 3 sabit exit IP gercek
+  rotasyon vermedi, ustune zorunlu restart'lar PX uretti.
+  Bkz. [elenen_siklar.md](elenen_siklar.md).
+
+## Siradaki olcumler (temiz IP ile, tek istek)
+
+1. `pagingOffset=20` zararli mi? — **oto_bot.py her turda bunu kullaniyor**,
+   PX'i surekli yemesinin sebebi bu olabilir. Oncelikli test.
+2. `/otomobil/2` (path sayfalama) zararli mi?
+3. `GORSEL_BLOK=0` (gorselleri gercekten indirmek) PX skorunu dusurur mu?
+   "Hic gorsel istemeyen istemci" imzasi anormal gorunuyor olabilir.
+
+Test kurali: **tek istek, sonra 30 dk sessizlik.** Blok gelirse o parametre
+yanmistir, listeye asla girmez.

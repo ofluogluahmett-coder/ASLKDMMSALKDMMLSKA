@@ -119,7 +119,9 @@ Uretilen (git'e girmez): `oto_hafiza.db`, `oto_tarama.db`, `oto_gorulmus.json`,
 6. `no_sandbox=False` **bilinctli**: uc, `no_sandbox=True` iken komuta
    `--test-type` ekliyor ve Brave 150+ bu flag'i gorunce aninda kapaniyor.
 
-Detaylar: [CLAUDE.md](CLAUDE.md) ve [docs/perimeterx_notu.md](docs/perimeterx_notu.md).
+Detaylar: [CLAUDE.md](CLAUDE.md), [docs/px_kacinma.md](docs/px_kacinma.md)
+(PX ile hic karsilasmama stratejisi + olculmus parametre listesi) ve
+[docs/perimeterx_notu.md](docs/perimeterx_notu.md).
 
 ---
 
