@@ -186,3 +186,26 @@ KATEGORI.
    bir kategori kullanilabilir (teshis icin bedava kanal).
 3. Blogun omru: 19:40'ta yandi, 22:43'te hala bloklu (3 saat +). Gun icinde
    kac saat sonra dondugu henuz olculmedi.
+
+---
+
+## oto_bot.py icin olculmus-temiz konfigurasyon
+
+Otobot varsayilan haliyle PX'i davet eden UC seyi birden yapiyordu:
+kalici (damgali) profil + her istege `pagingOffset` + tur basina 2-4 istek.
+Uc duzeltme de env ile acilir, varsayilan davranis BOZULMADI:
+
+```
+TEK_SAYFA=1     # derinlik plani [(0,1)] — tur basina 1 istek, pagingOffset YOK
+ANONIM_MOD=1    # --user-data-dir verilmez — her acilista temiz gecici profil
+```
+
+Ayrica `_sayfa_url(0)` artik duz URL donduruyor (parametre eklemiyor) —
+bu kosulsuz, env gerektirmiyor.
+
+| Ayar | Kazanc | Bedeli |
+|---|---|---|
+| `TEK_SAYFA=1` | tur basina istek 2-4 → 1; sadece olculmus-temiz URL bicimi | yogun saatte 1. sayfa ~60sn'de yenilendigi icin ilan kacabilir |
+| `ANONIM_MOD=1` | `_px3`/`_pxvid` damgasi birikmez | giris ve cf_clearance restart'lar arasi tasinmaz |
+
+`.env`'e ikisi de yazildi (05.10.2026).

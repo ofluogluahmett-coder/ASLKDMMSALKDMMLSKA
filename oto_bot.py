@@ -108,6 +108,15 @@ MAX_SAYFA    = int(os.getenv("MAX_SAYFA", str(len(SAYFA_DERINLIK_PLANI))))
 if os.getenv("TEK_SAYFA", "0") == "1":
     SAYFA_DERINLIK_PLANI = [(0, 1)]
 
+# 05.10.2026 — ANONIM_MOD=1: Brave'e --user-data-dir HIC verilmez; uc her
+# acilista TEMIZ gecici profil yaratir. PC bilesenleri botunda CF "basili tut"
+# spam'inin cozumu tam buydu (17.09.2026): haftalarca kullanilan kalici profil
+# _px3/_pxvid cerezleriyle "bilinen bot" damgasi yiyordu. Yeni oto_tarama.py de
+# bu modda /otomobil'de 11 tur boyunca TEK challenge gormedi.
+# BEDELI: giris yapilmis oturum ve cf_clearance restart'lar arasinda TASINMAZ.
+# Kalici profil davranisi icin ANONIM_MOD=0 (varsayilan).
+ANONIM_MOD = os.getenv("ANONIM_MOD", "0") == "1"
+
 RENDER_BEKLEME_TAVANI = 10
 RENDER_SETTLE_MIN     = 2.5
 RENDER_SETTLE_MAX     = 4.0
@@ -2242,11 +2251,16 @@ def _driver_olustur(proxy=None):
     elif proxy:
         # Kimlik yok — duz proxy-server yeterli
         opts.add_argument(f"--proxy-server={proxy}")
-    # KALICI profil — cf_clearance/PX cerezi restart'lar arasinda yasasin.
-    # Her proxy AYRI profil kullanir (cerezler karismasin).
-    profil_dir = _proxy_profil_dir(proxy)
-    profil_dir.mkdir(parents=True, exist_ok=True)
-    opts.add_argument(f"--user-data-dir={profil_dir}")
+    if ANONIM_MOD:
+        # Kalici profil YOK — damga birikmesin (bkz. ANONIM_MOD tanimi).
+        log.info("[PROFIL] ANONIM mod — kalici profil kullanilmiyor, "
+                 "her acilista temiz gecici profil")
+    else:
+        # KALICI profil — cf_clearance/PX cerezi restart'lar arasinda yasasin.
+        # Her proxy AYRI profil kullanir (cerezler karismasin).
+        profil_dir = _proxy_profil_dir(proxy)
+        profil_dir.mkdir(parents=True, exist_ok=True)
+        opts.add_argument(f"--user-data-dir={profil_dir}")
     kwargs = dict(
         options=opts,
         browser_executable_path=BRAVE_PATH,
