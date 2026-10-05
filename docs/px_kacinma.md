@@ -155,3 +155,34 @@ Client tarafinda yapilacaklar bitmek uzere. Olculenler:
 
 Siradaki kesin test (bedava): **telefon hotspot'u** ile ayni tek istekli
 kontrol. Donerse sorun cikis IP'sindedir ve calisan bir yol elde edilir.
+
+---
+
+## 05.10.2026 23:08 — DAMGA KATEGORI BAZLI (kritik bulgu)
+
+Ayni IP, ayni kod, ayni anonim profil, 25 dk arayla, tek istek:
+
+| Saat | Kategori | Sonuc |
+|---|---|---|
+| 22:43 | `/otomobil` | **PX_BLOCK** ("Access to this page has been denied"), 15.6s |
+| 23:08 | `/masaustu-donanim` | **21 ilan**, normal sayfa, 4.1s |
+
+**Sonuc: IP tamamen yanik DEGIL.** sahibinden bu IP'yi genel olarak kabul
+ediyor; reddettigi sey IP+**vasita kategorisi** kombinasyonu. Damga kategori
+kapsamli.
+
+Bu, PC bilesenleri botunun (apex_predator) neden hic bu derdi yasamadigini
+da aciklar: o `masaustu-donanim` tariyor, vasitanin siki rejimine hic girmiyor.
+"Oto botu block yiyor, PC botu yemiyor" farkinin kok nedeni kod degil,
+KATEGORI.
+
+### Bundan cikan calisma kurallari
+
+1. Vasita kategorisinde risk butcesi cok daha kucuk. PC botunda zararsiz olan
+   bir alisganlik (derin sayfalama, ekstra parametre, agresif tempo) burada
+   IP'yi yariyor.
+2. Vasita blogu, IP'nin geri kalan kullanimini etkilemiyor — yani blok
+   sirasinda "sahibinden calisiyor mu?" diye kontrol etmek icin vasita-disi
+   bir kategori kullanilabilir (teshis icin bedava kanal).
+3. Blogun omru: 19:40'ta yandi, 22:43'te hala bloklu (3 saat +). Gun icinde
+   kac saat sonra dondugu henuz olculmedi.

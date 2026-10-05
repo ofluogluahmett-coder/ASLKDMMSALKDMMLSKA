@@ -92,11 +92,25 @@ def main():
         i = argv.index("--yol")
         yol = argv[i + 1]
         del argv[i:i + 2]
+    # Git Bash/MSYS "/otomobil" argumanini "C:/Program Files/Git/otomobil"
+    # yapiyor (otomatik yol cevrimi). 05.10.2026'da bu bozuk bir URL'e ve
+    # chromedriver cokmesine yol acti. Son segmenti al, bas slash'i garanti et.
+    if ":" in yol or "\\" in yol:
+        yol = yol.replace("\\", "/").rstrip("/").split("/")[-1]
+    if not yol.startswith("/"):
+        yol = "/" + yol
     ek = argv[0] if argv else ""
     url = f"{TEMEL}{yol}{BASE_PARAM}{ek}&_={int(time.time() * 1000)}"
 
+    # URL MANTIK KONTROLU: bozuk bicimli bir istek ASLA atilmaz. Bozuk URL
+    # hem olcumu bosa harcar hem de ne olctugunu belirsizlestirir.
+    if not url.startswith("https://www.sahibinden.com/") or " " in url:
+        print("[DUR] URL bicimi bozuk, istek atilmadi:")
+        print(f"      {url}")
+        sys.exit(4)
+
     print(f"OLCUM  : {url}")
-    print(f"PROFIL : anonim (temiz gecici)")
+    print("PROFIL : anonim (temiz gecici)")
     if not bekleme_kontrol(zorla):
         sys.exit(3)
 
@@ -124,13 +138,18 @@ def main():
             govde = d.page_source[:8000].lower()
         except Exception:
             pass
-        imza = (baslik.lower() + " " + govde)
-        if any(k in imza for k in PX_ISARET):
-            hukum = "PX_BLOCK"
-        elif any(k in imza for k in CF_ISARET):
-            hukum = "CF"
-        elif n > 0:
+        # 05.10.2026 — SIRA ONEMLI. Ilk surum govdede "cloudflare" kelimesi
+        # gectigi icin 21 ILAN GELEN temiz sayfayi "CF" diye etiketledi
+        # (sahibinden Cloudflare arkasinda, kelime her sayfada geciyor).
+        # Dogru olcut: ILAN GELDI MI? Challenge ekranlari ilan dondurmez.
+        bas_l = baslik.lower()
+        imza = bas_l + " " + govde
+        if n > 0 and not any(k in bas_l for k in PX_ISARET):
             hukum = "TEMIZ"
+        elif any(k in imza for k in PX_ISARET):
+            hukum = "PX_BLOCK"
+        elif any(k in bas_l for k in CF_ISARET) or "px-captcha" in govde:
+            hukum = "CF"
         else:
             hukum = "BOS"
         print(f"SONUC  : {hukum}  ilan={n}  sure={time.time() - t0:.2f}s")
