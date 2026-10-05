@@ -1,7 +1,61 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 04.10.2026 — repo temizlendi, sade toplayıcı doğrulandı.
+**Son güncelleme:** 05.10.2026 — PX kök nedeni bulundu: soğuk giriş.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 05.10.2026 (gece) — PX KÖK NEDENİ: SOĞUK GİRİŞ
+
+**Teşhis zinciri (hepsi tek istekli ölçüm):**
+
+| Saat | Ne | Sonuç |
+|---|---|---|
+| 19:11-19:27 | uc, anonim profil, doğrudan `/otomobil` | 11 tur, 252 ilan, **0 challenge** |
+| ~19:40 | `&pagingSize=50` denemesi | **tek istekte hard block** |
+| 22:43 | aynı IP, taze profil, doğrudan `/otomobil` | **PX_BLOCK** (3 saat sonra hâlâ) |
+| 23:08 | aynı IP, `/masaustu-donanim` | **21 ilan** → damga tüm IP'yi kapsamıyor |
+| ~23:30 | **kullanıcı ELLE** aynı IP'de `/otomobil` (sıralama + ilan detayı) | **hiç PX yok** → damga IP'de DEĞİL |
+| 23:45 | parmak izi denetimi (HTTPS sayfada) | `webdriver=False`, `cdc_` yok, `plugins=5`, native imzalar yamasız, `userAgentData` normal → **bariz otomasyon izi YOK** |
+| 23:50 | tek değişiklik: oturum **ana sayfadan** başladı (29 çerez), sonra kategori | **21 ilan, 0.87s, PX YOK** |
+
+**Kök neden:** sorun ne IP ne parmak izi — **giriş biçimi**. Sıfır geçmişli
+yepyeni bir tarayıcının ilk hareketi olarak tarihe-göre-sıralı derin kategori
+sayfasına dalmak (üstüne hiç görsel indirmemek) insan trafiğinde görülmeyen
+bir desen. Sabahki 11 turun temiz geçmesi de bunu doğruluyor: **ilk** tur
+çerezi kapmış, kalan 10 tur aynı oturumu kullanmış. Oturum tazeleme ve
+challenge sonrası her yeni oturum aynı soğuk girişi tekrarlayınca blok
+kalıcılaştı.
+
+**Uygulanan — `isin()` (oto_tarama.py):** her YENİ oturumda (açılış, oturum
+tazeleme, challenge sonrası) önce ana sayfa açılır, 4-9 sn beklenir, 1-3
+hafif scroll yapılır, çerezler doğal yolla alınır; sonra kategoriye geçilir.
+
+**Yeni env anahtarları:** `ISINMA` (1), `CACHE_BUST` (1), `CACHE_DISABLED`
+(1; attach'ta 0), `GORSEL_BLOK` (1; attach'ta 0), `CDP_PORT` (boş).
+
+**Yeni aletler:**
+- `arac_px_olcum.py` — bir parametre güvenli mi? TEK istekle ölçer, temiz
+  anonim profil, 20 dk bekleme kuralı alete gömülü, hükmü `px_olcum.log`'a yazar.
+- `arac_parmak_izi.py` — sıfır riskli otomasyon izi denetimi (sahibinden'e
+  istek atmaz). `--https` şart: `about:blank`'te `userAgentData` yok görünür.
+- `baslat_brave_debug.bat` — ayrı profille (`brave_insan_profile`) debug
+  portlu Brave; kullanıcı 1-2 dk normal gezer, bot `CDP_PORT=9222` ile O
+  tarayıcıya bağlanır. Isınma yetmezse yedek plan.
+
+**oto_bot.py'de yapılanlar:** `_sayfa_url(0)` artık düz URL döndürüyor
+(`pagingOffset=0` eklenmiyor — botun ilk sayfayı bile parametreyle istediği
+bulundu). `TEK_SAYFA=1` (plan `[(0,1)]`) ve `ANONIM_MOD=1` (`--user-data-dir`
+hiç verilmez) env'leri eklendi, `.env`'e yazıldı. **Not:** otobotta ısınma
+HENÜZ YOK — oto_tarama'daki `isin()` oraya da taşınmalı, kök neden orada da
+geçerli.
+
+**Ayrıştırılmadı:** 23:50 denemesinde ısınma + cache-bust kapalı + görsel açık
++ cache açık aynı anda değişti. Sıradaki ölçüm: ısınma AÇIK + cache-bust AÇIK
+(gecikme sorunu için cache-bust gerekli) → yine temiz mi?
+
+**Ölçülen parametre hükümleri:** `sorting=date_desc` TEMİZ · `&_=<ms>` TEMİZ
+· `pagingSize` **YANIK (tek istekte)** · `pagingOffset>0` ölçülemedi.
 
 ---
 
