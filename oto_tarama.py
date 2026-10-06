@@ -40,12 +40,105 @@ CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 #       ayni urettigi imza. "Tur 1 gecer, tur 2 duvar" deseni de bu.
 # TARAYICI=chrome ile damgasiz tarayiciya gecilir. Ayni zamanda TEMIZ
 # LABORATUVAR: istek desenimiz mi sorunlu, yoksa sadece Brave mi yanmisti?
-TARAYICI = os.getenv("TARAYICI", "brave").strip().lower()
-TARAYICI_YOL = CHROME_PATH if TARAYICI == "chrome" else BRAVE_PATH
+TARAYICI = os.getenv("TARAYICI", "chrome").strip().lower()
+_TARAYICI_YOLLARI = {"brave": BRAVE_PATH, "chrome": CHROME_PATH}
 _TARAYICI_APP = {
     "brave": r"C:\Program Files\BraveSoftware\Brave-Browser\Application",
     "chrome": r"C:\Program Files\Google\Chrome\Application",
 }
+
+# 06.10.2026 — TARAYICI HAVUZU (kullanici onerisi).
+# Gerekce: damga tarayici PARMAK IZINE yapisiyor. Brave hard PX yerken ayni
+# IP'den Chrome sorunsuz taradi. Yani biri yanarsa digeri hala calisabilir;
+# yanan tarafa dinlenme suresi kazandirmak icin siraya gecilir.
+# SART: korlemesine donusum YOK. Her tarayici icin "son blok" zamani
+# tutulur ve dinlenmesi beklenir — yoksa bugun yanmis Brave'e gecip
+# dogrudan duvara koşariz. Durum DISKTE saklanir, bot kapanip acilinca
+# kaybolmaz. Ust uste blok yiyen tarayicinin dinlenmesi kademeli uzar.
+HAVUZ_AKTIF = os.getenv("HAVUZ", "1") != "0"
+HAVUZ_DURUM_DOSYA = ROOT / "tarayici_durum.json"
+BLOK_DINLENME = [1800, 3600, 7200]     # 30 dk, 1 sa, 2 sa (ardisik bloga gore)
+
+AKTIF_TARAYICI = TARAYICI
+TARAYICI_YOL = _TARAYICI_YOLLARI.get(TARAYICI, BRAVE_PATH)
+
+
+def _havuz_oku():
+    try:
+        import json
+        return json.loads(HAVUZ_DURUM_DOSYA.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _havuz_yaz(d):
+    try:
+        import json
+        HAVUZ_DURUM_DOSYA.write_text(
+            json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _kurulu_tarayicilar():
+    return [ad for ad, yol in _TARAYICI_YOLLARI.items() if Path(yol).exists()]
+
+
+def tarayici_blok_isaretle(ad):
+    """Bu tarayici blok yedi: zamani ve ardisik sayisini kaydet."""
+    d = _havuz_oku()
+    k = d.get(ad, {})
+    k["son_blok"] = time.time()
+    k["ardisik"] = int(k.get("ardisik", 0)) + 1
+    d[ad] = k
+    _havuz_yaz(d)
+
+
+def tarayici_temiz_isaretle(ad):
+    """Bu tarayici ile basarili tur: ardisik blok sayacini sifirla."""
+    d = _havuz_oku()
+    k = d.get(ad, {})
+    if k.get("ardisik"):
+        k["ardisik"] = 0
+        d[ad] = k
+        _havuz_yaz(d)
+
+
+def _dinlenme_kalan(ad, d):
+    k = d.get(ad, {})
+    sb = k.get("son_blok")
+    if not sb:
+        return 0.0
+    sure = BLOK_DINLENME[min(int(k.get("ardisik", 1)) - 1,
+                             len(BLOK_DINLENME) - 1)]
+    return max(0.0, sure - (time.time() - sb))
+
+
+def tarayici_sec(haric=None):
+    """Dinlenmesi dolmus bir tarayici dondur.
+
+    Doner: (ad, beklenecek_saniye). beklenecek_saniye > 0 ise hicbiri hazir
+    degil; en erken hazir olan ad ve suresi doner."""
+    kurulu = [a for a in _kurulu_tarayicilar() if a != haric] or _kurulu_tarayicilar()
+    if not kurulu:
+        return AKTIF_TARAYICI, 0.0
+    d = _havuz_oku()
+    hazir = [(a, _dinlenme_kalan(a, d)) for a in kurulu]
+    bos = [a for a, k in hazir if k <= 0]
+    if bos:
+        # Dinlenmesi dolanlar arasinda EN UZUN dinleneni sec
+        def _son(a):
+            return d.get(a, {}).get("son_blok", 0)
+        bos.sort(key=_son)
+        return bos[0], 0.0
+    hazir.sort(key=lambda x: x[1])
+    return hazir[0][0], hazir[0][1]
+
+
+def tarayiciya_gec(ad):
+    global AKTIF_TARAYICI, TARAYICI_YOL
+    AKTIF_TARAYICI = ad
+    TARAYICI_YOL = _TARAYICI_YOLLARI.get(ad, BRAVE_PATH)
 
 # PC botunda ANA_URL neydi, burada otomobil linki o.
 ANA_URL = os.getenv("ANA_URL", "https://www.sahibinden.com/otomobil?sorting=date_desc")
@@ -400,7 +493,7 @@ def ilan_kaydet(ilan_id, baslik, fiyat, yil, km, url):
 # -- Tarayici yardimcilari (PC botundan birebir) ---------------------------
 def _brave_major_version() -> int:
     """Secili tarayicinin ana surumu (Application klasorunden)."""
-    app = _TARAYICI_APP.get(TARAYICI, _TARAYICI_APP["brave"])
+    app = _TARAYICI_APP.get(AKTIF_TARAYICI, _TARAYICI_APP["brave"])
     try:
         surumler = [int(re.match(r"^(\d+)\.", d).group(1))
                     for d in os.listdir(app)
@@ -584,7 +677,30 @@ def sayfa_boyu_ayarla(driver, sessiz=False):
         driver.execute_script(
             "arguments[0].scrollIntoView({block:'center'});", dugme)
         time.sleep(random.uniform(0.6, 1.6))
-        dugme.click()
+        # 06.10.2026 — TIKLAMA YEDEKLERI. Native click bu baglantida
+        # navigasyon uretmiyordu (URL'de pagingSize cikmiyor, liste 20'de
+        # kaliyordu). Sirayla denenir; hepsi SAYFA ICINDEN, referer'li.
+        _href = dugme.get_attribute("href") or ""
+        _onceki_url = driver.current_url
+        try:
+            dugme.click()
+        except Exception:
+            pass
+        if f"pagingSize={SAYFA_BOYU}" not in (driver.current_url or ""):
+            time.sleep(2.0)
+        if f"pagingSize={SAYFA_BOYU}" not in (driver.current_url or ""):
+            try:                      # 2) JS tiklamasi
+                driver.execute_script("arguments[0].click();", dugme)
+                time.sleep(2.0)
+            except Exception:
+                pass
+        if (f"pagingSize={SAYFA_BOYU}" not in (driver.current_url or "")
+                and _href):
+            try:                      # 3) sayfa baglamindan navigasyon
+                driver.execute_script("window.location.href = arguments[0];",
+                                      _href)
+            except Exception:
+                pass
         # 06.10.2026 — DOGRU BEKLEME. _sayfa_bekle() "sayfada kart var mi"
         # diye bakiyor; ESKI sayfanin kartlari zaten orada oldugu icin aninda
         # donuyor ve henuz yuklenmemis yeni sayfa yerine eski 22 kart
@@ -655,7 +771,7 @@ def surucu_olustur(sessiz=False):
 
     surum = _brave_major_version()
     if not sessiz:
-        print(f"Tarayici: {TARAYICI.upper()} (major surum {surum})")
+        print(f"Tarayici: {AKTIF_TARAYICI.upper()} (major surum {surum})")
         # ANONIM MOD: user_data_dir YOK -> her acilista temiz gecici profil.
         # (PC botunda CF 'basili tut' spam'inin cozumu tam buydu.)
         print("Anonim mod: temiz gecici profil (kalici profil damgasi yok).")
@@ -1063,12 +1179,30 @@ def pusuya_yat():
                     temkinli_kalan = TEMKINLI_TUR
                     continue
                 print(f"[TUR {tur}] [!] PX BLOCK ({challenge_seri}. ust uste) — "
-                      f"oturum TERK ediliyor, {mola // 60} dk mola. "
+                      f"oturum TERK ediliyor. "
                       f"Baslik={(driver.title or '')[:40]}")
                 print("           NOT: cozulmeye calisilmiyor — damgali "
                       "oturumda her istek damgayi tazeler.")
                 surucu_kapat(driver)
-                time.sleep(mola)
+                if HAVUZ_AKTIF:
+                    # Bu tarayici damgalandi: isaretle ve SIRADAKI tarayiciya
+                    # gec. Hicbiri dinlenmesini doldurmadiysa en erken hazir
+                    # olani bekle (korlemesine donus YOK).
+                    tarayici_blok_isaretle(AKTIF_TARAYICI)
+                    _yeni, _bekle = tarayici_sec(haric=AKTIF_TARAYICI)
+                    if _bekle > 0:
+                        print(f"           HAVUZ: tum tarayicilar dinlenmede; "
+                              f"{_yeni.upper()} icin {_bekle / 60:.0f} dk "
+                              f"bekleniyor")
+                        time.sleep(_bekle)
+                    if _yeni != AKTIF_TARAYICI:
+                        print(f"           HAVUZ: {AKTIF_TARAYICI.upper()} "
+                              f"-> {_yeni.upper()} gecisi")
+                        tarayiciya_gec(_yeni)
+                    else:
+                        time.sleep(mola)
+                else:
+                    time.sleep(mola)
                 driver = surucu_olustur(sessiz=True)
                 oturum_basla = time.monotonic()
                 gorulmus.clear()
@@ -1078,6 +1212,8 @@ def pusuya_yat():
                 print(f"[TUR {tur}] [!] 0 ilan (challenge DEGIL) | "
                       f"baslik={(driver.title or '')[:50]}")
             else:
+                if challenge_seri and HAVUZ_AKTIF:
+                    tarayici_temiz_isaretle(AKTIF_TARAYICI)
                 challenge_seri = 0
 
             global _SU_SEVIYESI
