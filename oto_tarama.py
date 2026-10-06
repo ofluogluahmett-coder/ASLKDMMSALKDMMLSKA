@@ -67,6 +67,9 @@ HAVUZ_DURUM_DOSYA = ROOT / "tarayici_durum.json"
 # KIMLIK DEGISTIRMEK (farkli tarayici = farkli parmak izi). Dinlenme
 # sureleri de 30 dk degil SAATLER olmali.
 BLOK_DINLENME = [7200, 14400, 28800]   # 2 sa, 4 sa, 8 sa (ardisik bloga gore)
+# Alternatif kimlik BU KADAR sn icinde bloklanmissa tekrar denemeye degmez
+# (iki bloklu tarayici arasinda ping-pong olmasin). Disinda HER ZAMAN denenir.
+TAZE_BLOK_SN = float(os.getenv("TAZE_BLOK_SN", "600"))   # 10 dk
 
 AKTIF_TARAYICI = TARAYICI
 TARAYICI_YOL = _TARAYICI_YOLLARI.get(TARAYICI, BRAVE_PATH)
@@ -1349,8 +1352,23 @@ def pusuya_yat():
                     # PX kendiliginden GECMEZ -> beklemek ise yaramaz,
                     # kimlik degistirmek gerekir. Alternatif varsa HEMEN gec.
                     tarayici_blok_isaretle(AKTIF_TARAYICI)
+                    # 06.10.2026 — KURAL DUZELTILDI (kullanici uyardi:
+                    # "chrome kapaninca brave gececektin, onu yaptin mi?").
+                    # Yapmamisti: Brave'i "bugun yandi" diye isaretlemistim,
+                    # 4 saatlik dinlenme yuzunden havuz gecisi IPTAL edip
+                    # "elle mudahale" yaziyordu — istenen davranisi kendi
+                    # koydugum koruma engelliyordu.
+                    # Mantik da tutarsizdi: PX KENDILIGINDEN GECMEDIGINE gore
+                    # beklemenin faydasi YOK. Diger kimligi denemenin maliyeti
+                    # TEK istek; bloklu cikarsa aninda ogrenilir.
+                    # Yeni kural: alternatif varsa HER ZAMAN gec ve DENE;
+                    # sadece ikisi de son TAZE_BLOK_SN icinde bloklandiysa
+                    # insana haber ver.
                     _yeni, _bekle = tarayici_sec(haric=AKTIF_TARAYICI)
-                    if _yeni != AKTIF_TARAYICI and _bekle <= 0:
+                    _d_simdi = _havuz_oku()
+                    _alt_son = _d_simdi.get(_yeni, {}).get("son_blok", 0)
+                    _alt_taze = (time.time() - _alt_son) < TAZE_BLOK_SN
+                    if _yeni != AKTIF_TARAYICI and not _alt_taze:
                         print(f"           HAVUZ: {AKTIF_TARAYICI.upper()} "
                               f"bloklandi -> {_yeni.upper()} gecisi "
                               f"(PX kendi gecmez, kimlik degisiyor)")
