@@ -147,6 +147,34 @@ ISINMA      = os.getenv("ISINMA", "1") != "0"
 # insan yok" oluyordu. Isinma turunda davraniyoruz ama tarama turlarinda
 # davranmiyorduk — oysa sensor oturumun TUM omrunu izliyor.
 DAVRANIS    = os.getenv("DAVRANIS", "1") != "0"
+
+# --- 7) PARTI-DUYARLI TARAMA (06.10.2026) -------------------------------
+# OLCUM: ilanlar tek tek DUSMUYOR, PARTI halinde geliyor. Kesintisiz
+# 31 turluk kosuda (dun gece, 0 challenge) desen:
+#     00:21:39   2 ilan
+#     00:29:01  20 ilan  (+442 sn)
+#     00:35:51  20 ilan  (+409 sn)
+#     00:43:16  20 ilan  (+444 sn)
+#     00:47:33  20 ilan  (+256 sn)
+# Arada 5-6 tur BOS donuyor. Iki sonuc:
+#   (a) Partiler arasinda sik tarama BOSA gidiyor — kazanc yok, PX riski var.
+#   (b) Her parti TAM 20 cikiyor; tesadufi degil, sayfa 22 ilan tutuyor ve
+#       biz sadece 1. sayfayi okuyoruz. Yani gercek parti 20'den BUYUK ve
+#       tasan kismi SISTEMATIK olarak kaybediyoruz. (Kullanici elle gezerken
+#       "bir arka sayfaya kadar gidebiliyor" diye dogruladi.) Bir partideki
+#       20 ilanin ID yayilimi 23M-143M araliga dagilmis: bunlar tek tek
+#       yayinlanmis degil, BIRLIKTE onaylanip indekse basilmis ilanlar.
+# TASARIM: saat varsayimi YOK (botun saat profili olculemiyor; sadece test
+# saatlerinde acik oluyor). Sistem gordugune tepki verir:
+#   - Tur, sayfanin PARTI_ESIK kadarini yeni getirdiyse -> parti dusmus,
+#     hemen derin sayfayi (pagingOffset) oku; o da doluysa bir sonrakini.
+#   - Bos turlarda hicbir sey degismez (sabit dar bant tempo).
+# pagingOffset guvenli: kullanici ELLE pagingOffset=20 ile gezdi, PX yok
+# (06.10, arac_izle.py ile dogrulandi).
+PARTI_DUYARLI = os.getenv("PARTI_DUYARLI", "1") != "0"
+PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "15"))   # 22 ilanin kaci yeniyse "parti"
+PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "3"))  # 1. sayfa + 2 derin
+PARTI_SAYFA_ARASI = (4.0, 9.0)   # derin sayfalar arasi insan temposu (sn)
 ISINMA_URL  = "https://www.sahibinden.com/"
 CACHE_BUST  = os.getenv("CACHE_BUST", "0") != "0"   # 06.10: VARSAYILAN KAPALI (bkz. yukarisi)
 CDP_PORT    = os.getenv("CDP_PORT", "").strip()
@@ -492,6 +520,90 @@ def hedef_periyot(bos_tur, temkinli_kalan):
     return min(p, PERIYOT_TAVANI)
 
 
+def sayfa_isle(items):
+    """Bir liste sayfasindaki kartlari DB'ye yazar.
+    Doner: (yeni, guncel, en_yeni_id)"""
+    yeni = guncel = 0
+    en_yeni_id = 0
+    for item in items:
+        try:
+            ilan_id = item.get_attribute("data-id")
+            if not ilan_id or not ilan_id.isdigit():
+                continue
+            en_yeni_id = max(en_yeni_id, int(ilan_id))
+            if ilan_id in gorulmus:
+                continue
+
+            baslik = _metin(item, ".searchResultsTitleValue")
+            fiyat_metin = _metin(item, ".searchResultsPriceValue")
+            fiyat_s = re.sub(r"[^\d]", "", fiyat_metin)
+            if not baslik or not fiyat_s:
+                continue
+            fiyat = float(fiyat_s)
+
+            yil = km = ""
+            try:
+                attrs = item.find_elements(
+                    By.CSS_SELECTOR, ".searchResultsAttributeValue")
+                degerler = [a.text.strip() for a in attrs if a.text.strip()]
+                if len(degerler) >= 1:
+                    yil = degerler[0]
+                if len(degerler) >= 2:
+                    km = degerler[1]
+            except Exception:
+                pass
+
+            try:
+                href = item.find_element(
+                    By.CSS_SELECTOR,
+                    ".searchResultsTitleValue a").get_attribute("href")
+            except Exception:
+                href = None
+            url = href or f"https://www.sahibinden.com/ilan/{ilan_id}/detay"
+
+            if ilan_kaydet(ilan_id, baslik, fiyat, yil, km, url):
+                yeni += 1
+            else:
+                guncel += 1
+            gorulmus.add(ilan_id)
+        except Exception:
+            continue
+    return yeni, guncel, en_yeni_id
+
+
+def derin_sayfalari_oku(driver, tur):
+    """Parti dustugunde 2. ve 3. sayfayi oku (tasan ilanlari kurtar).
+
+    Doner: (toplam_yeni, okunan_sayfa_sayisi)"""
+    global _istek
+    toplam_yeni = 0
+    okunan = 0
+    for sayfa in range(2, PARTI_MAX_SAYFA + 1):
+        offset = (sayfa - 1) * 20
+        time.sleep(random.uniform(*PARTI_SAYFA_ARASI))   # insan temposu
+        try:
+            driver.get(f"{ANA_URL}&pagingOffset={offset}")
+            _istek += 1
+            _sayfa_bekle(driver, timeout=12)
+            items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
+            if not items and challenge_mi(driver):
+                print(f"[TUR {tur}]   derin sayfa {sayfa}: CHALLENGE — "
+                      f"derinlesme durduruldu")
+                return toplam_yeni, okunan
+            yeni, guncel, _ = sayfa_isle(items)
+            okunan += 1
+            toplam_yeni += yeni
+            print(f"[TUR {tur}]   derin sayfa {sayfa} (offset={offset}): "
+                  f"ilan={len(items)} yeni={yeni}")
+            # Bu sayfa da doluysa devam; degilse partinin sonuna geldik
+            if yeni < PARTI_ESIK:
+                break
+        except Exception as e:
+            print(f"[TUR {tur}]   derin sayfa {sayfa} HATA: {str(e)[:80]}")
+            break
+    return toplam_yeni, okunan
+
+
 # -- Ana dongu -------------------------------------------------------------
 def pusuya_yat():
     global _istek
@@ -574,55 +686,16 @@ def pusuya_yat():
             else:
                 challenge_seri = 0
 
-            yeni = 0
-            guncel = 0
-            en_yeni_id = 0
-            for item in items:
-                try:
-                    ilan_id = item.get_attribute("data-id")
-                    if not ilan_id or not ilan_id.isdigit():
-                        continue
-                    en_yeni_id = max(en_yeni_id, int(ilan_id))
-                    if ilan_id in gorulmus:
-                        continue
+            yeni, guncel, en_yeni_id = sayfa_isle(items)
 
-                    baslik = _metin(item, ".searchResultsTitleValue")
-                    fiyat_metin = _metin(item, ".searchResultsPriceValue")
-                    fiyat_s = re.sub(r"[^\d]", "", fiyat_metin)
-                    if not baslik or not fiyat_s:
-                        continue
-                    fiyat = float(fiyat_s)
-
-                    # Otomobilde kartta yil + km kolonlari var
-                    yil = km = ""
-                    try:
-                        attrs = item.find_elements(
-                            By.CSS_SELECTOR, ".searchResultsAttributeValue")
-                        degerler = [a.text.strip() for a in attrs if a.text.strip()]
-                        if len(degerler) >= 1:
-                            yil = degerler[0]
-                        if len(degerler) >= 2:
-                            km = degerler[1]
-                    except Exception:
-                        pass
-
-                    # Link: karttan al, olmazsa ID'den kur
-                    try:
-                        href = item.find_element(
-                            By.CSS_SELECTOR,
-                            ".searchResultsTitleValue a").get_attribute("href")
-                    except Exception:
-                        href = None
-                    url = href or f"https://www.sahibinden.com/ilan/{ilan_id}/detay"
-
-                    # Gorsel ALINMIYOR (istege gore).
-                    if ilan_kaydet(ilan_id, baslik, fiyat, yil, km, url):
-                        yeni += 1
-                    else:
-                        guncel += 1
-                    gorulmus.add(ilan_id)
-                except Exception:
-                    continue
+            # PARTI DUSTU MU? Sayfanin buyuk kismi yeniyse parti gelmis
+            # demektir ve tasan kisim derin sayfalarda kaliyor.
+            derin_yeni = derin_sayfa = 0
+            if PARTI_DUYARLI and items and yeni >= PARTI_ESIK:
+                print(f"[TUR {tur}] PARTI ALGILANDI ({yeni}/{len(items)} yeni) "
+                      f"— derin sayfalar okunuyor")
+                derin_yeni, derin_sayfa = derin_sayfalari_oku(driver, tur)
+                yeni += derin_yeni
 
             # ADAPTIF TEMPO
             if items:
@@ -643,8 +716,8 @@ def pusuya_yat():
             # KAPSAMA UYARISI: sayfa bir turda neredeyse tamamen yenilenmisse
             # tur arasinda ilan KACIRIYOR olabilirsin. Periyodu kisaltmak
             # gerekir ama bu PX riskini artirir — karar kullanicinin.
-            if items and yeni >= len(items) - 1:
-                etiket += " [sayfa tam dondu: ilan kaciriyor olabilirsin]"
+            if derin_sayfa:
+                etiket += f" +derin({derin_sayfa} sayfa, {derin_yeni} ilan)"
             print(f"[TUR {tur}] {datetime.now():%H:%M:%S} ilan={len(items)} "
                   f"yeni={yeni} guncel={guncel} en_yeni_id={en_yeni_id} "
                   f"db_toplam={toplam} istek={_istek} | "
