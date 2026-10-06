@@ -217,8 +217,18 @@ PARAMETRE_KONTROL = os.getenv("PARAMETRE_KONTROL", "1") != "0"
 # (orn. her tur tam 80.0 sn) makine imzasidir, hafif jitter insanidir.
 # Not: 80 sn, Aydin'in botundan (90-120) biraz hizli, eski temiz donemden
 # (180-300) belirgin hizli, onceki ayarimizdan (50-75) ise YAVAS.
-TEMEL_MIN = float(os.getenv("TEMEL_MIN", "77"))
-TEMEL_MAX = float(os.getenv("TEMEL_MAX", "86"))
+# 06.10.2026 23:00 — OLCUM SONUCU TEMPO BUYUTULDU.
+# 77-86 sn ile olculen: 7 temiz tur = 9,5 dakika, sonra PX. Bu hizda gunde
+# ~144 PX; kullanicinin olcutu 3-4. 40 kat fark.
+# Kullanicinin KENDI eski log'u dogru cevabi veriyor: 14-17.09 doneminde bot
+# 1059 TUR boyunca 0 PX gordu ve o donemin tur periyodu 180-300 sn'ydi.
+# VE ARTIK YAVASLAMANIN BEDELI YOK: 50'lik listeye gectik (51-52 ilan/istek).
+# Partiler ~6-7 dk arayla, her biri 20-30 ilan geliyor; 51 ilanlik sayfayi
+# 3-4 dakikada bir okumak partinin TAMAMINI yakalamak icin fazlasiyla
+# yeterli. 80 saniyede bir bakmanin kapsama kazanci YOK, sadece 3 kat
+# istek ve 3 kat PX riski var.
+TEMEL_MIN = float(os.getenv("TEMEL_MIN", "180"))
+TEMEL_MAX = float(os.getenv("TEMEL_MAX", "240"))
 PERIYOT_TAVANI = 420.0
 # Gece ilan akisi durur -> ayni tempoda taramak bedava risktir.
 GECE_BASLA, GECE_BITIS = 2, 7
