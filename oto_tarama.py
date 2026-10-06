@@ -626,6 +626,19 @@ def sayfa_boyu_ayarla(driver, sessiz=False):
     try:
         driver.get(ANA_URL)
         _sayfa_bekle(driver, timeout=20)
+        # 06.10.2026 — SAYFALAMA KONTROLUNU BEKLE. page_load_strategy="eager"
+        # ile DOM akmaya devam ederken sayfanin ALTINDAKI sayfalama bolumu
+        # henuz gelmemis oluyordu; teshis "sayfadaki adaylar: []" dedi, yani
+        # oge DOM'da yoktu. Onceki denemede bulmasi zamanlama sansiydi.
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "a[href*='pagingSize=']")))
+        except Exception:
+            if not sessiz:
+                print("[UYARI] sayfalama kontrolu 15 sn'de gelmedi — "
+                      "20'lik liste ile devam")
+            return None
         time.sleep(random.uniform(1.5, 3.0))          # sayfaya goz at
 
         # Kademeli olarak en alta kaydir (tek hamlede ziplama bot imzasi)
@@ -854,20 +867,81 @@ CF_SADECE = ("just a moment", "bir dakika", "dakika lutfen", "dakika lütfen",
              "verify you are human")
 
 
+# 06.10.2026 — UCUNCU ENGEL TIPI: sahibinden'in KENDI ara sayfasi.
+# Kullanici fark etti; canli tarayicidan kunyesi alindi:
+#   URL    : /cs/tloading?returnUrl=https%3A%2F%2F...%2Fotomobil
+#   Baslik : "sahibinden.com Yukleniyor"
+#   Metin  : "Tarayicinizi kontrol ediyoruz... Devam Et butonuna tiklayarak
+#             kaldiginiz yerden devam edebilirsiniz."
+#   Dugme  : <input id="btn-continue" value="Devam Et">
+# Bu bir bulmaca DEGIL; sitenin seni returnUrl'e geri yollamak icin koydugu
+# dugme. Bot bunu tanimadigi icin "0 ilan (challenge DEGIL)" diye turlari
+# harciyordu (olcum: yukle=12.4s ve 35.6s, ilan=0, ust uste).
+# Dogru tepki: dugmeye bas, ayni turda devam et. Oturum SAGLAM, PX degil.
+DEVAM_ISARET = ("/cs/tloading", "tarayicinizi kontrol ediyoruz",
+                "tarayıcınızı kontrol ediyoruz", "btn-continue")
+
+
 def challenge_turu(driver):
-    """None | 'cf' | 'px'"""
+    """None | 'devam' | 'cf' | 'px'"""
     basl = (driver.title or "").lower()
     govde = ""
     try:
         govde = driver.page_source[:6000].lower()
     except Exception:
         pass
+    try:
+        imza_url = (driver.current_url or "").lower()
+    except Exception:
+        imza_url = ""
     imza = basl + " " + govde
     if any(k in imza for k in PX_ISARET):
         return "px"
+    if any(k in (imza + " " + imza_url) for k in DEVAM_ISARET):
+        return "devam"
     if any(k in basl for k in CF_SADECE) or "cf-browser-verification" in govde:
         return "cf"
     return None
+
+
+def devam_et_bas(driver, tur=0):
+    """sahibinden'in /cs/tloading ara sayfasindaki 'Devam Et'e bas.
+
+    Doner: True = liste geldi. Oturum terk EDILMEZ."""
+    try:
+        dugme = None
+        for sec in ("#btn-continue",
+                    "input[value*='Devam']",
+                    "button[id*='continue']"):
+            try:
+                adaylar = driver.find_elements(By.CSS_SELECTOR, sec)
+            except Exception:
+                continue
+            if adaylar:
+                dugme = adaylar[0]
+                break
+        if dugme is None:
+            print(f"[TUR {tur}]   'Devam Et' dugmesi bulunamadi")
+            return False
+        time.sleep(random.uniform(0.8, 2.2))     # insan once okur
+        try:
+            dugme.click()
+        except Exception:
+            try:
+                driver.execute_script("arguments[0].click();", dugme)
+            except Exception:
+                return False
+        _sayfa_bekle(driver, timeout=25)
+        n = len(driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem"))
+        if n:
+            print(f"[TUR {tur}] [+] 'Devam Et' basildi, {n} ilan geldi — "
+                  f"oturum korundu")
+            return True
+        print(f"[TUR {tur}]   'Devam Et' sonrasi liste gelmedi")
+        return False
+    except Exception as e:
+        print(f"[TUR {tur}]   'Devam Et' hatasi: {str(e)[:90]}")
+        return False
 
 
 def cf_bekle(driver, max_bekleme=90):
@@ -1051,6 +1125,10 @@ def derin_sayfalari_oku(driver, tur):
             _sayfa_bekle(driver, timeout=12)
             items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
             _t = challenge_turu(driver) if not items else None
+            if _t == "devam" and devam_et_bas(driver, tur):
+                items = driver.find_elements(By.CSS_SELECTOR,
+                                             ".searchResultsItem")
+                _t = None
             if _t:
                 print(f"[TUR {tur}]   derin sayfa {sayfa}: "
                       f"{'CF' if _t == 'cf' else 'PX'} — derinlesme durduruldu")
@@ -1152,7 +1230,16 @@ def pusuya_yat():
 
             # -- CHALLENGE: CF ise BEKLE, PX ise oturumu TERK et --
             _tur_tipi = challenge_turu(driver) if len(items) == 0 else None
-            if _tur_tipi == "cf":
+            if _tur_tipi == "devam":
+                print(f"[TUR {tur}] [~] ARA SAYFA (/cs/tloading) — "
+                      f"'Devam Et' deneniyor")
+                if devam_et_bas(driver, tur):
+                    items = driver.find_elements(By.CSS_SELECTOR,
+                                                 ".searchResultsItem")
+                else:
+                    time.sleep(random.uniform(TEMEL_MIN, TEMEL_MAX))
+                    continue
+            elif _tur_tipi == "cf":
                 # CF kendiliginden geciyor. Oturum saglam, terk ETME.
                 print(f"[TUR {tur}] [~] CLOUDFLARE — kendiliginden gecmesi "
                       f"bekleniyor (tiklama YOK). Baslik="
