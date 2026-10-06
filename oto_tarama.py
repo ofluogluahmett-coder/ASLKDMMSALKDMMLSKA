@@ -1352,47 +1352,29 @@ def pusuya_yat():
                     # PX kendiliginden GECMEZ -> beklemek ise yaramaz,
                     # kimlik degistirmek gerekir. Alternatif varsa HEMEN gec.
                     tarayici_blok_isaretle(AKTIF_TARAYICI)
-                    # 06.10.2026 — KURAL DUZELTILDI (kullanici uyardi:
-                    # "chrome kapaninca brave gececektin, onu yaptin mi?").
-                    # Yapmamisti: Brave'i "bugun yandi" diye isaretlemistim,
-                    # 4 saatlik dinlenme yuzunden havuz gecisi IPTAL edip
-                    # "elle mudahale" yaziyordu — istenen davranisi kendi
-                    # koydugum koruma engelliyordu.
-                    # Mantik da tutarsizdi: PX KENDILIGINDEN GECMEDIGINE gore
-                    # beklemenin faydasi YOK. Diger kimligi denemenin maliyeti
-                    # TEK istek; bloklu cikarsa aninda ogrenilir.
-                    # Yeni kural: alternatif varsa HER ZAMAN gec ve DENE;
-                    # sadece ikisi de son TAZE_BLOK_SN icinde bloklandiysa
-                    # insana haber ver.
-                    _yeni, _bekle = tarayici_sec(haric=AKTIF_TARAYICI)
-                    _d_simdi = _havuz_oku()
-                    _alt_son = _d_simdi.get(_yeni, {}).get("son_blok", 0)
-                    _alt_taze = (time.time() - _alt_son) < TAZE_BLOK_SN
-                    if _yeni != AKTIF_TARAYICI and not _alt_taze:
+                    # 06.10.2026 — KULLANICI KARARI: "siktiret yanmayi
+                    # falan, kapandigi an direk diger tarayiciya atla."
+                    # Gerekce dogru ve olcumle uyusuyor: PX KENDILIGINDEN
+                    # GECMIYOR, yani bloklanan kimlikle beklemenin faydasi
+                    # YOK; diger kimligi denemenin maliyeti TEK istek,
+                    # bloklu cikarsa aninda ogrenilir.
+                    # KALDIRILDI: dinlenme/kilit kontrolu artik gecisi
+                    # ENGELLEMIYOR (onceki surumde kendi koydugum 4 saatlik
+                    # kilit, Chrome bloklanınca Brave'e gecisi iptal edip
+                    # "elle mudahale" yaziyordu). Isaretleme sadece
+                    # ISTATISTIK icin duruyor.
+                    _digerleri = [a for a in _kurulu_tarayicilar()
+                                  if a != AKTIF_TARAYICI]
+                    if _digerleri:
+                        _yeni = _digerleri[0]
                         print(f"           HAVUZ: {AKTIF_TARAYICI.upper()} "
-                              f"bloklandi -> {_yeni.upper()} gecisi "
-                              f"(PX kendi gecmez, kimlik degisiyor)")
+                              f"bloklandi -> {_yeni.upper()}'a ATLANIYOR "
+                              f"(kosulsuz)")
                         tarayiciya_gec(_yeni)
-                        time.sleep(random.uniform(20, 45))   # kisa nefes
+                        time.sleep(random.uniform(15, 35))   # kisa nefes
                     else:
-                        # Tum kimlikler yanik: BURADA INSAN GEREKIYOR.
-                        print("")
-                        print("  " + "=" * 64)
-                        print("  !! ELLE MUDAHALE GEREKIYOR !!")
-                        print("  Tum tarayici kimlikleri PX tarafindan bloklu.")
-                        print("  PX kendiliginden gecmiyor; ekrandaki 'basili")
-                        print("  tut' ekranini ELLE gecersen bot devam eder.")
-                        print(f"  En erken otomatik deneme: {_yeni.upper()} "
-                              f"{_bekle / 60:.0f} dk sonra.")
-                        print("  " + "=" * 64)
-                        print("")
-                        try:
-                            (ROOT / "ELLE_MUDAHALE_GEREKLI.txt").write_text(
-                                f"{datetime.now():%Y-%m-%d %H:%M:%S} — tum "
-                                f"tarayicilar bloklu, PX elle gecilmeli\n",
-                                encoding="utf-8")
-                        except Exception:
-                            pass
+                        print(f"           HAVUZ: tek tarayici kurulu — "
+                              f"{mola // 60} dk mola")
                         time.sleep(mola)
                 else:
                     time.sleep(mola)
