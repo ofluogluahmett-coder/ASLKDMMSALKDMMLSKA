@@ -119,18 +119,26 @@ def tarayici_sec(haric=None):
 
     Doner: (ad, beklenecek_saniye). beklenecek_saniye > 0 ise hicbiri hazir
     degil; en erken hazir olan ad ve suresi doner."""
-    kurulu = [a for a in _kurulu_tarayicilar() if a != haric] or _kurulu_tarayicilar()
+    # 06.10.2026 DUZELTME — TUM tarayicilara bakilir. Ilk surum sadece
+    # DIGER tarayiciya bakiyordu: Chrome blok yiyince Brave'in 1 saatlik
+    # dinlenmesini bekliyordu, oysa Chrome'un kendi dinlenmesi 30 dk, yani
+    # daha ERKEN hazir oluyor. Dogrusu en erken hazir olani secmek.
+    kurulu = _kurulu_tarayicilar()
     if not kurulu:
         return AKTIF_TARAYICI, 0.0
     d = _havuz_oku()
     hazir = [(a, _dinlenme_kalan(a, d)) for a in kurulu]
+    # 1) Dinlenmesi dolmus BASKA tarayici varsa onu sec (kimlik degissin)
+    bos_diger = [a for a, k in hazir if k <= 0 and a != haric]
+    if bos_diger:
+        bos_diger.sort(key=lambda a: d.get(a, {}).get("son_blok", 0))
+        return bos_diger[0], 0.0
+    # 2) Yoksa dinlenmesi dolmus herhangi biri (kendisi dahil)
     bos = [a for a, k in hazir if k <= 0]
     if bos:
-        # Dinlenmesi dolanlar arasinda EN UZUN dinleneni sec
-        def _son(a):
-            return d.get(a, {}).get("son_blok", 0)
-        bos.sort(key=_son)
+        bos.sort(key=lambda a: d.get(a, {}).get("son_blok", 0))
         return bos[0], 0.0
+    # 3) Hicbiri hazir degil: EN ERKEN hazir olani ve suresini dondur
     hazir.sort(key=lambda x: x[1])
     return hazir[0][0], hazir[0][1]
 
