@@ -361,7 +361,35 @@ PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "10"))   # alt sinir
 # Dogru olcut SU SEVIYESI: gercekten taze ilan, onceki turun en yuksek
 # ID'sinin USTUNDE olandir. Parti algisi artik buna bakiyor.
 _SU_SEVIYESI = 0   # bu oturumda gorulen en yuksek ilan ID'si
-PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "3"))  # 1. sayfa + 2 derin
+PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "5"))  # 1. sayfa + 4 derin
+
+# --- 9) KACIRMA TESPITI (kapali dongu) ----------------------------------
+# SORU (kullanici): "sabah ilanlarin sik girdigi saatlerde ilan kacirmayacak
+# miyiz?" Tahminle cevaplanamaz, cunku elimizdeki veri gercek giris hizini
+# vermiyor: "yeni" sayaci doping'li ESKI ilanlari da sayiyor, DB hala
+# doluyordu ve gozlem pencerelerimiz kisa/kesintili.
+#
+# COZUM: sistem kendi kacirmasini OLCSUN.
+#   Su seviyesi W = gorulen en yuksek ilan ID'si.
+#   Sayfadaki EN KUCUK ID > W  ->  sayfanin en eskisi bile bizim son
+#   gordugumuzden YENI demektir; arada GORMEDIGIMIZ ilanlar var = KACIRMA.
+#   Bu bir tahmin degil, kesin tespit.
+#
+# TEPKI:
+#   1) Bosluk varsa derin sayfalar min(sayfa) <= W olana kadar okunur
+#      (5 sayfa = ~255 ilan menzili). Boylece bosluk KAPATILIR.
+#   2) Menzil yetmezse bu GERCEK kayiptir: log'a yazilir ve bot tempoyu
+#      KENDISI kisaltir (carpan HIZLANMA_CARPAN, taban HIZLANMA_TABAN).
+#   3) Kacirma gorulmeyen her GEVSEME_TUR turda tempo kademeli normale doner.
+# Garanti: iki tarama arasinda ~255 ilandan fazla girmedikce kacirma YOK;
+# girerse log'da gorunur ve tempo otomatik sikisir.
+KACIRMA_TAKIP   = os.getenv("KACIRMA_TAKIP", "1") != "0"
+HIZLANMA_TABAN  = float(os.getenv("HIZLANMA_TABAN", "60"))
+HIZLANMA_CARPAN = 0.6
+GEVSEME_TUR     = 5
+GEVSEME_CARPAN  = 1.25
+_hiz_carpani    = 1.0
+_kacirma_sayisi = 0
 # 06.10.2026 OLCUM — ART ARDA HIZLI ISTEK PX TETIKLIYOR:
 #   Chrome (damgasiz), tur 1 OK -> 4-9 sn sonra derin sayfa -> PX
 #   ayni oturumda 56 sn sonra tur 2 -> SORUNSUZ (21 ilan)
@@ -1021,6 +1049,8 @@ def cf_bekle(driver, max_bekleme=90):
 def hedef_periyot(bos_tur, temkinli_kalan):
     """Turun TOPLAM suresi icin hedef (sn). Risk arttikca uzar."""
     p = random.uniform(TEMEL_MIN, TEMEL_MAX)
+    # Kacirma baskisi varsa tempo kisilir (taban HIZLANMA_TABAN).
+    p = max(HIZLANMA_TABAN, p * _hiz_carpani)
     if not ADAPTIF:
         return p                      # duz rastgele tempo, carpan yok
     if bos_tur >= BOS_TUR_ESIK:
@@ -1165,6 +1195,70 @@ def sayfa_isle(items, su_seviyesi=None):
         except Exception:
             continue
     return yeni, guncel, en_yeni_id, taze
+
+
+def _sayfa_id_araligi(items):
+    """Sayfadaki gecerli ID'lerin (min, max) degeri. Bos ise (0, 0)."""
+    idler = []
+    for it in items:
+        try:
+            v = it.get_attribute("data-id")
+            if v and v.isdigit():
+                idler.append(int(v))
+        except Exception:
+            continue
+    return (min(idler), max(idler)) if idler else (0, 0)
+
+
+def bosluk_kapat(driver, su_seviyesi, tur):
+    """Derin sayfalari min(sayfa) <= su_seviyesi olana kadar oku.
+
+    Doner: (toplam_yeni, okunan_sayfa, kapandi_mi)"""
+    global _istek
+    toplam_yeni = 0
+    okunan = 0
+    kapandi = False
+    adim = SAYFA_BOYU if SAYFA_BOYU > 20 else 20
+    for sayfa in range(2, PARTI_MAX_SAYFA + 1):
+        offset = (sayfa - 1) * adim
+        time.sleep(random.uniform(*PARTI_SAYFA_ARASI))   # insan temposu
+        try:
+            driver.get(_url_offset(AKTIF_URL, offset))
+            _istek += 1
+            _sayfa_bekle(driver, timeout=20)
+            items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
+            _t = challenge_turu(driver) if not items else None
+            if _t == "devam" and devam_et_bas(driver, tur):
+                items = driver.find_elements(By.CSS_SELECTOR,
+                                             ".searchResultsItem")
+                _t = None
+            if _t:
+                print(f"[TUR {tur}]   derin sayfa {sayfa}: "
+                      f"{'CF' if _t == 'cf' else 'PX'} — bosluk kapatma "
+                      f"durduruldu")
+                return toplam_yeni, okunan, kapandi
+            if not items:
+                return toplam_yeni, okunan, kapandi
+            s_min, _ = _sayfa_id_araligi(items)
+            yeni, guncel, _, _tz = sayfa_isle(items, su_seviyesi)
+            if ZENGIN:
+                try:
+                    import oto_kopru
+                    oto_kopru.html_isle(driver.page_source)
+                except Exception:
+                    pass
+            okunan += 1
+            toplam_yeni += yeni
+            kapandi = (s_min <= su_seviyesi)
+            print(f"[TUR {tur}]   derin sayfa {sayfa} (offset={offset}): "
+                  f"ilan={len(items)} yeni={yeni} "
+                  f"min_id={s_min} {'-> BOSLUK KAPANDI' if kapandi else ''}")
+            if kapandi:
+                break
+        except Exception as e:
+            print(f"[TUR {tur}]   derin sayfa {sayfa} HATA: {str(e)[:80]}")
+            break
+    return toplam_yeni, okunan, kapandi
 
 
 def derin_sayfalari_oku(driver, tur):
@@ -1414,15 +1508,44 @@ def pusuya_yat():
             # parti sanip derin sayfalara iniyordu: bosa 2 istek, hem de
             # oturumun EN HASSAS aninda. Parti ancak bir onceki turla
             # karsilastirilarak anlasilir.
-            # Parti = TAZE ilan sayisi sayfayi doldurmaya yaklastiysa.
-            # (Ilk turda su seviyesi henuz 0 oldugu icin atlanir.)
+            # KACIRMA TESPITI: sayfanin EN KUCUK ID'si su seviyesinden
+            # buyukse arada gormedigimiz ilanlar var (kesin tespit).
+            global _hiz_carpani, _kacirma_sayisi
+            _s_min, _s_max = _sayfa_id_araligi(items)
+            _bosluk = bool(KACIRMA_TAKIP and items and _onceki_su
+                           and _s_min > _onceki_su)
             _parti_esigi = max(PARTI_ESIK, int(PARTI_ORAN * len(items))) if items else 0
-            if (PARTI_DUYARLI and tur > 1 and items and _onceki_su
-                    and taze >= _parti_esigi):
-                print(f"[TUR {tur}] PARTI ALGILANDI ({taze}/{len(items)} TAZE) "
-                      f"— derin sayfalar okunuyor")
-                derin_yeni, derin_sayfa = derin_sayfalari_oku(driver, tur)
+            _parti = (PARTI_DUYARLI and tur > 1 and items and _onceki_su
+                      and taze >= _parti_esigi)
+            if _bosluk or _parti:
+                if _bosluk:
+                    print(f"[TUR {tur}] !! BOSLUK: sayfanin en eskisi "
+                          f"({_s_min}) su seviyesinden ({_onceki_su}) YENI — "
+                          f"arada gormedigimiz ilan var, kapatiliyor")
+                else:
+                    print(f"[TUR {tur}] PARTI ALGILANDI "
+                          f"({taze}/{len(items)} TAZE) — derinlesiliyor")
+                derin_yeni, derin_sayfa, _kapandi = bosluk_kapat(
+                    driver, _onceki_su, tur)
                 yeni += derin_yeni
+                if _bosluk and not _kapandi:
+                    # Menzil yetmedi: GERCEK KAYIP. Tempoyu kis.
+                    _kacirma_sayisi += 1
+                    _eski = _hiz_carpani
+                    _hiz_carpani = max(
+                        HIZLANMA_TABAN / max(TEMEL_MIN, 1.0),
+                        _hiz_carpani * HIZLANMA_CARPAN)
+                    print(f"[TUR {tur}] !! KACIRMA ({_kacirma_sayisi}. kez) — "
+                          f"{PARTI_MAX_SAYFA} sayfa yetmedi. Tempo kisiliyor: "
+                          f"carpan {_eski:.2f} -> {_hiz_carpani:.2f}")
+                elif _bosluk:
+                    print(f"[TUR {tur}] bosluk {derin_sayfa} derin sayfada "
+                          f"KAPATILDI (+{derin_yeni} ilan)")
+            elif _hiz_carpani < 1.0 and tur % GEVSEME_TUR == 0:
+                _eski = _hiz_carpani
+                _hiz_carpani = min(1.0, _hiz_carpani * GEVSEME_CARPAN)
+                print(f"[TUR {tur}] kacirma yok — tempo gevsiyor: "
+                      f"carpan {_eski:.2f} -> {_hiz_carpani:.2f}")
 
             # ADAPTIF TEMPO
             if items:
@@ -1447,6 +1570,10 @@ def pusuya_yat():
                 etiket += f" +derin({derin_sayfa} sayfa, {derin_yeni} ilan)"
             if z_ek or z_gun:
                 etiket += f" zengin(+{z_ek}/{z_gun})"
+            if _hiz_carpani < 1.0:
+                etiket += f" hiz_carpani={_hiz_carpani:.2f}"
+            if _kacirma_sayisi:
+                etiket += f" KACIRMA={_kacirma_sayisi}"
             print(f"[TUR {tur}] {datetime.now():%H:%M:%S} ilan={len(items)} "
                   f"taze={taze} yeni={yeni} guncel={guncel} en_yeni_id={en_yeni_id} "
                   f"db_toplam={toplam} istek={_istek} | "
