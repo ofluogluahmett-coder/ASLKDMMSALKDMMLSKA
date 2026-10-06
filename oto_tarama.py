@@ -138,6 +138,15 @@ OTO_BOT_KILIDI  = ROOT / "oto_bot.lock"
 # CDP_PORT=9222 -> yeni tarayici ACILMAZ; ELLE acilmis (cerezi oturmus,
 #                  guvenilir) Brave'e baglanilir.
 ISINMA      = os.getenv("ISINMA", "1") != "0"
+# DAVRANIS=1: her turda sayfa okunduktan SONRA, mola suresi icinde insan
+# gibi davran (scroll + fare hareketi + okuma molasi).
+# NEDEN (06.10.2026, arac_izle.py ile olculdu): kullanicinin gercek
+# oturumunda PX sensoru /QerrWGjI/xhr/api/v2/collector adresine 7 dakikada
+# 38 kez davranis verisi gonderiyor. Bizim bot sayfayi 0.5 sn'de okuyup
+# 80 saniye HIC KIPIRDAMADAN bekliyordu; sensorun PX'e raporu "sayfa acildi,
+# insan yok" oluyordu. Isinma turunda davraniyoruz ama tarama turlarinda
+# davranmiyorduk — oysa sensor oturumun TUM omrunu izliyor.
+DAVRANIS    = os.getenv("DAVRANIS", "1") != "0"
 ISINMA_URL  = "https://www.sahibinden.com/"
 CACHE_BUST  = os.getenv("CACHE_BUST", "0") != "0"   # 06.10: VARSAYILAN KAPALI (bkz. yukarisi)
 CDP_PORT    = os.getenv("CDP_PORT", "").strip()
@@ -145,8 +154,18 @@ CDP_PORT    = os.getenv("CDP_PORT", "").strip()
 # HIZ: gorsel/font/tracker byte'larini engelle (ilan verisi DOM'da kalir).
 # DIKKAT: "hic gorsel indirmeyen istemci" insan-disi bir desen. Attach
 # modunda (gercek tarayici) varsayilan KAPALI — o tarayici normal gozukmeli.
-GORSEL_BLOK    = os.getenv("GORSEL_BLOK", "0" if CDP_PORT else "1") != "0"
-CACHE_DISABLED = os.getenv("CACHE_DISABLED", "0" if CDP_PORT else "1") != "0"
+# 06.10.2026 — VARSAYILAN KAPALI: gercek oturum olculdu, 22 font + 5
+# gorsel indiriyor. "Hic gorsel istemeyen istemci" insan disi bir desen
+# ve hiz faydasi da kalmadi (yukleme zaten 0.4-1.1 sn).
+GORSEL_BLOK    = os.getenv("GORSEL_BLOK", "0") != "0"
+# 06.10.2026 — VARSAYILAN KAPALI. Kullanicinin kendi tarayicisi pasif
+# dinlendi (arac_izle.py): sunucu liste sayfasini
+#   cache-control: no-cache, no-store, must-revalidate
+#   cf-cache-status: DYNAMIC
+# ile gonderiyor ve 7 dakikalik gezinmede TEK BIR 304 yok. Yani sayfa
+# hicbir zaman cache'lenmiyordu -> cache'i kapatmanin tazelik faydasi SIFIR,
+# riski ise olculdu (cache_disabled=1 ile 2. turda hard block).
+CACHE_DISABLED = os.getenv("CACHE_DISABLED", "0") != "0"
 BLOCK_URLS = [
     "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.svg",
     "*shbdn.com/photos*", "*.woff", "*.woff2", "*.ttf",
@@ -315,6 +334,56 @@ def isin(driver, sessiz=False):
                   "(%d cerez)" % len(driver.get_cookies()))
     except Exception as e:
         print("[UYARI] isinma yapilamadi: %s" % e)
+
+
+def insan_gibi_davran(driver, pencere_sn):
+    """Mola suresinin bir kismini insan gibi gecir: scroll + fare + okuma.
+
+    PX sensoru oturum boyunca davranis verisi topluyor (olculdu: gercek
+    oturumda 7 dk'da 38 collector POST'u). Hic etkilesim olmayan bir oturum
+    "sayfa acildi, insan yok" diye raporlanir. Buradaki hareketler GERCEK
+    girdi degil ama sensorun okudugu DOM/olay seviyesinde izleri birakir:
+    scroll pozisyonu, mousemove olaylari, odak.
+
+    pencere_sn: bu is icin ayrilan sure (molanin bir kismi).
+    Hata durumunda sessizce doner — tarama akisini ASLA engellemez."""
+    if not DAVRANIS or pencere_sn <= 2:
+        return 0.0
+    t0 = time.monotonic()
+    try:
+        from selenium.webdriver.common.action_chains import ActionChains
+        from selenium.webdriver.common.keys import Keys
+        govde = driver.find_element(By.CSS_SELECTOR, "body")
+        for _ in range(random.randint(2, 4)):
+            if time.monotonic() - t0 > pencere_sn:
+                break
+            # Scroll: tek yonlu desen bot imzasi -> karisik
+            if random.random() < 0.75:
+                driver.execute_script(
+                    "window.scrollBy(0, %d);" % random.randint(200, 650))
+            else:
+                driver.execute_script(
+                    "window.scrollBy(0, -%d);" % random.randint(120, 400))
+            time.sleep(random.uniform(0.7, 2.0))
+            # Fare: ara noktali kucuk hareketler (mousemove olaylari)
+            try:
+                zincir = ActionChains(driver)
+                zincir.move_to_element_with_offset(
+                    govde, random.randint(60, 700), random.randint(60, 420))
+                for _ in range(random.randint(1, 3)):
+                    zincir.move_by_offset(random.randint(-90, 90),
+                                          random.randint(-60, 60))
+                zincir.perform()
+            except Exception:
+                pass
+            time.sleep(random.uniform(0.4, 1.3))
+        # Okuma molasi (sayfa uzerinde kal, sensor veri gondersin)
+        kalan = pencere_sn - (time.monotonic() - t0)
+        if kalan > 0:
+            time.sleep(min(kalan, random.uniform(2.0, 6.0)))
+    except Exception:
+        pass
+    return time.monotonic() - t0
 
 
 def surucu_olustur(sessiz=False):
@@ -581,7 +650,11 @@ def pusuya_yat():
                   f"db_toplam={toplam} istek={_istek} | "
                   f"yukle={t_yukle:.2f}s + mola={mola:.0f}s{etiket}")
             if not (MAX_TUR and tur >= MAX_TUR):   # son turda bosuna bekleme
-                time.sleep(mola)
+                # Molanin bir kismini sayfa uzerinde insan gibi gecir;
+                # kalanini bekle. Toplam tur periyodu DEGISMEZ.
+                davranis_penceresi = min(mola * 0.5, 18.0)
+                harcanan = insan_gibi_davran(driver, davranis_penceresi)
+                time.sleep(max(0.0, mola - harcanan))
 
         except Exception as e:
             import traceback

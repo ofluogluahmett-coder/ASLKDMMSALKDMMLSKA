@@ -49,7 +49,10 @@ def _ws_ac():
     import websocket
     with urllib.request.urlopen(BASE + "/json/list", timeout=8) as r:
         hedefler = json.loads(r.read().decode("utf-8"))
-    sayfa = next((t for t in hedefler if t.get("type") == "page"), None)
+    sayfalar = [t for t in hedefler if t.get("type") == "page"]
+    # Liste sekmesini tercih et (detay sekmesi degil)
+    sayfa = next((t for t in sayfalar if "/otomobil" in (t.get("url") or "")),
+                 sayfalar[0] if sayfalar else None)
     if not sayfa:
         print("[DUR] Acik sayfa bulunamadi.")
         sys.exit(2)
