@@ -272,3 +272,40 @@ sorunu icin cache-bust lazim) → yine temiz mi?
 portlu Brave acar; kullanici 1-2 dakika normal gezer; sonra
 `CDP_PORT=9222` ile bot O tarayiciya baglanir, kendi oturumunu hic kurmaz.
 Isinma yetmezse kullanilacak yol budur.
+
+---
+
+## 06.10.2026 gece — ONEMLI DUZELTME: PX KENDILIGINDEN GECMIYOR
+
+Kullanici: *"O PX'i ELLE gectim. PX herhangi bir sekilde kendisi gecilmiyor,
+cok cok nadir bir hadise."*
+
+Bu, gece boyunca kaydettigim **"bot kendi kendine toparlandi"** sonucunu
+(21:22 ve 22:34 olaylari) GECERSIZ kilar. O toparlanmalar botun degil
+kullanicinin mudahalesiydi. Sabah olcumu de bunu destekliyordu ama yanlis
+okumusum: PX'ten **3 saat sonra** ayni tarayici hala blokluydu ve **taze
+profil bile kurtarmiyordu**.
+
+### Tasarima etkisi (buyuk)
+
+| Eski varsayim | Gercek |
+|---|---|
+| Challenge gelirse bot bekler, oturum tazelenir, devam eder | Beklemek ISE YARAMAZ; PX o kimlige kilitlenir |
+| 30 dk dinlenme yeter | Saatler; olculen 3+ saat |
+| Elle mudahale gerekmez | PX hard block = INSAN gerekir (ya da farkli kimlik) |
+
+### Dogru strateji
+
+1. **ONLEME** birinci savunma (isinma, seyrek istek, dogal URL'ler, ara
+   sayfayi dogru gecmek) — cunku blok yedikten sonra otomatik cikis yok.
+2. **KIMLIK DEGISTIRME** ikinci savunma: PX gelince ayni tarayiciyi
+   beklemek yerine DIGER tarayiciya gec (farkli parmak izi). Dinlenme
+   sureleri 2/4/8 saat.
+3. **INSAN** ucuncu ve son savunma: tum kimlikler yanmissa bot bunu
+   BAGIRARAK soyler (konsola uyari + `ELLE_MUDAHALE_GEREKLI.txt`), cunku
+   kullanicinin olcutu "gunde en fazla 3-4 elle mudahale" ve mudahale
+   gereken ani bilmesi lazim.
+
+Not: `arac_px_rapor.py`'nin "kendi toparladi" sayaci bu yuzden yanilticidir
+— challenge sonrasi basarili tur, kullanici ekranda PX'i gectigi icin de
+gelmis olabilir. Rapor okunurken bu akilda tutulmali.

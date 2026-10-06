@@ -57,7 +57,16 @@ _TARAYICI_APP = {
 # kaybolmaz. Ust uste blok yiyen tarayicinin dinlenmesi kademeli uzar.
 HAVUZ_AKTIF = os.getenv("HAVUZ", "1") != "0"
 HAVUZ_DURUM_DOSYA = ROOT / "tarayici_durum.json"
-BLOK_DINLENME = [1800, 3600, 7200]     # 30 dk, 1 sa, 2 sa (ardisik bloga gore)
+# 06.10.2026 — KULLANICI DUZELTMESI: "PX herhangi bir sekilde kendisi
+# gecilmiyor, cok cok nadir bir hadise. O PX'i ELLE gectim."
+# Bu, gece boyunca "bot kendi toparladi" diye kaydettigim iki olayi (21:22
+# ve 22:34) gecersiz kilar — oradaki toparlanma BOTUN degil KULLANICININ
+# mudahalesiydi. Sabah olcumu de bunu destekliyor: PX'ten 3 saat sonra ayni
+# tarayici hala blokluydu ve TAZE PROFIL bile kurtarmiyordu.
+# SONUC: bloklanan tarayiciyi BEKLEMEK ise yaramaz; tek otomatik cikis
+# KIMLIK DEGISTIRMEK (farkli tarayici = farkli parmak izi). Dinlenme
+# sureleri de 30 dk degil SAATLER olmali.
+BLOK_DINLENME = [7200, 14400, 28800]   # 2 sa, 4 sa, 8 sa (ardisik bloga gore)
 
 AKTIF_TARAYICI = TARAYICI
 TARAYICI_YOL = _TARAYICI_YOLLARI.get(TARAYICI, BRAVE_PATH)
@@ -66,7 +75,10 @@ TARAYICI_YOL = _TARAYICI_YOLLARI.get(TARAYICI, BRAVE_PATH)
 def _havuz_oku():
     try:
         import json
-        return json.loads(HAVUZ_DURUM_DOSYA.read_text(encoding="utf-8"))
+        # utf-8-sig: BOM'lu yazilmis dosyayi da okur. (06.10.2026 — durum
+        # dosyasi PowerShell'den BOM ile yazilmisti, json.loads patladi,
+        # havuz bos sanildi ve Brave'in dinlenme kaydi silindi.)
+        return json.loads(HAVUZ_DURUM_DOSYA.read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
 
@@ -1194,6 +1206,24 @@ def pusuya_yat():
     if not kilit_al():
         return
     db_hazirla()
+    # 06.10.2026 — ACILISTA HAVUZU SOR. Eskiden bot dinlenmede olan
+    # tarayiciyla hemen basliyordu; havuzun anlami kalmiyordu. Blok kaydi
+    # diskte durdugu icin bot kapanip acilsa da dinlenme sureleri gecerli.
+    if HAVUZ_AKTIF:
+        # Acilista BEKLEME YOK (veri akisi durmasin). Dinlenmesi dolmus varsa
+        # o, yoksa ardisik blogu EN AZ olan secilir — en azindan denenir.
+        _ad, _bekle = tarayici_sec()
+        if _bekle > 0:
+            _d = _havuz_oku()
+            _kurulu = _kurulu_tarayicilar()
+            _ad = min(_kurulu, key=lambda a: (
+                int(_d.get(a, {}).get("ardisik", 0)),
+                _d.get(a, {}).get("son_blok", 0))) if _kurulu else _ad
+            print(f"HAVUZ: hepsi dinlenmede — yine de {_ad.upper()} ile "
+                  f"deneniyor (acilista beklemiyoruz)")
+        if _ad != AKTIF_TARAYICI:
+            print(f"HAVUZ: acilista {AKTIF_TARAYICI.upper()} -> {_ad.upper()}")
+            tarayiciya_gec(_ad)
     driver = surucu_olustur()
     oturum_basla = time.monotonic()
     limit_yazi = f"{MAX_TUR} tur" if MAX_TUR else "sinirsiz"
@@ -1306,21 +1336,35 @@ def pusuya_yat():
                       "oturumda her istek damgayi tazeler.")
                 surucu_kapat(driver)
                 if HAVUZ_AKTIF:
-                    # Bu tarayici damgalandi: isaretle ve SIRADAKI tarayiciya
-                    # gec. Hicbiri dinlenmesini doldurmadiysa en erken hazir
-                    # olani bekle (korlemesine donus YOK).
+                    # PX kendiliginden GECMEZ -> beklemek ise yaramaz,
+                    # kimlik degistirmek gerekir. Alternatif varsa HEMEN gec.
                     tarayici_blok_isaretle(AKTIF_TARAYICI)
                     _yeni, _bekle = tarayici_sec(haric=AKTIF_TARAYICI)
-                    if _bekle > 0:
-                        print(f"           HAVUZ: tum tarayicilar dinlenmede; "
-                              f"{_yeni.upper()} icin {_bekle / 60:.0f} dk "
-                              f"bekleniyor")
-                        time.sleep(_bekle)
-                    if _yeni != AKTIF_TARAYICI:
+                    if _yeni != AKTIF_TARAYICI and _bekle <= 0:
                         print(f"           HAVUZ: {AKTIF_TARAYICI.upper()} "
-                              f"-> {_yeni.upper()} gecisi")
+                              f"bloklandi -> {_yeni.upper()} gecisi "
+                              f"(PX kendi gecmez, kimlik degisiyor)")
                         tarayiciya_gec(_yeni)
+                        time.sleep(random.uniform(20, 45))   # kisa nefes
                     else:
+                        # Tum kimlikler yanik: BURADA INSAN GEREKIYOR.
+                        print("")
+                        print("  " + "=" * 64)
+                        print("  !! ELLE MUDAHALE GEREKIYOR !!")
+                        print("  Tum tarayici kimlikleri PX tarafindan bloklu.")
+                        print("  PX kendiliginden gecmiyor; ekrandaki 'basili")
+                        print("  tut' ekranini ELLE gecersen bot devam eder.")
+                        print(f"  En erken otomatik deneme: {_yeni.upper()} "
+                              f"{_bekle / 60:.0f} dk sonra.")
+                        print("  " + "=" * 64)
+                        print("")
+                        try:
+                            (ROOT / "ELLE_MUDAHALE_GEREKLI.txt").write_text(
+                                f"{datetime.now():%Y-%m-%d %H:%M:%S} — tum "
+                                f"tarayicilar bloklu, PX elle gecilmeli\n",
+                                encoding="utf-8")
+                        except Exception:
+                            pass
                         time.sleep(mola)
                 else:
                     time.sleep(mola)
