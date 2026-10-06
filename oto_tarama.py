@@ -26,7 +26,26 @@ from selenium.webdriver.support import expected_conditions as EC
 
 ROOT       = Path(__file__).parent
 DB_FILE    = ROOT / "oto_tarama.db"
-BRAVE_PATH = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+BRAVE_PATH  = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+# 06.10.2026 — TARAYICI SECIMI (kullanici gozlemi):
+# Brave ELLE bile hard PX yiyor hale geldi; AYNI makinede AYNI IP'den
+# Chrome sorunsuz taranabiliyor. Iki sonuc:
+#   (a) Blok IP seviyesinde DEGIL — Chrome ayni IP'den giriyor.
+#   (b) Damga Brave'in PARMAK IZINE yapismis. Bu, anlamadigimiz seyi
+#       aciklar: her acilista TEMIZ gecici profil kullaniyoruz, cerez
+#       tasimiyoruz, ama her yeni oturum DOGUSTAN bloklu geliyordu —
+#       cunku tasidigimiz sey cerez degil, uc+Brave'in her seferinde
+#       ayni urettigi imza. "Tur 1 gecer, tur 2 duvar" deseni de bu.
+# TARAYICI=chrome ile damgasiz tarayiciya gecilir. Ayni zamanda TEMIZ
+# LABORATUVAR: istek desenimiz mi sorunlu, yoksa sadece Brave mi yanmisti?
+TARAYICI = os.getenv("TARAYICI", "brave").strip().lower()
+TARAYICI_YOL = CHROME_PATH if TARAYICI == "chrome" else BRAVE_PATH
+_TARAYICI_APP = {
+    "brave": r"C:\Program Files\BraveSoftware\Brave-Browser\Application",
+    "chrome": r"C:\Program Files\Google\Chrome\Application",
+}
 
 # PC botunda ANA_URL neydi, burada otomobil linki o.
 ANA_URL = os.getenv("ANA_URL", "https://www.sahibinden.com/otomobil?sorting=date_desc")
@@ -174,7 +193,15 @@ DAVRANIS    = os.getenv("DAVRANIS", "1") != "0"
 PARTI_DUYARLI = os.getenv("PARTI_DUYARLI", "1") != "0"
 PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "15"))   # 22 ilanin kaci yeniyse "parti"
 PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "3"))  # 1. sayfa + 2 derin
-PARTI_SAYFA_ARASI = (4.0, 9.0)   # derin sayfalar arasi insan temposu (sn)
+# 06.10.2026 OLCUM — ART ARDA HIZLI ISTEK PX TETIKLIYOR:
+#   Chrome (damgasiz), tur 1 OK -> 4-9 sn sonra derin sayfa -> PX
+#   ayni oturumda 56 sn sonra tur 2 -> SORUNSUZ (21 ilan)
+# Yani suclu "her ikinci istek" degil, ARALIK. Derin sayfalar da normal
+# tur temposuna yakin araliklarla okunur.
+PARTI_SAYFA_ARASI = (
+    float(os.getenv("PARTI_SAYFA_ARASI_MIN", "30")),
+    float(os.getenv("PARTI_SAYFA_ARASI_MAX", "50")),
+)
 
 # --- 8) YENILEME BICIMI (06.10.2026) ------------------------------------
 # OLCUM (arac_izle.py, kullanicinin KENDI tarayicisi, 7 dk gezinme):
@@ -325,7 +352,8 @@ def ilan_kaydet(ilan_id, baslik, fiyat, yil, km, url):
 
 # -- Tarayici yardimcilari (PC botundan birebir) ---------------------------
 def _brave_major_version() -> int:
-    app = r"C:\Program Files\BraveSoftware\Brave-Browser\Application"
+    """Secili tarayicinin ana surumu (Application klasorunden)."""
+    app = _TARAYICI_APP.get(TARAYICI, _TARAYICI_APP["brave"])
     try:
         surumler = [int(re.match(r"^(\d+)\.", d).group(1))
                     for d in os.listdir(app)
@@ -469,13 +497,13 @@ def surucu_olustur(sessiz=False):
 
     surum = _brave_major_version()
     if not sessiz:
-        print(f"Brave major surum: {surum}")
+        print(f"Tarayici: {TARAYICI.upper()} (major surum {surum})")
         # ANONIM MOD: user_data_dir YOK -> her acilista temiz gecici profil.
         # (PC botunda CF 'basili tut' spam'inin cozumu tam buydu.)
         print("Anonim mod: temiz gecici profil (kalici profil damgasi yok).")
     driver = uc.Chrome(
         options=options,
-        browser_executable_path=BRAVE_PATH,
+        browser_executable_path=TARAYICI_YOL,
         version_main=surum,
         no_sandbox=False,
     )
