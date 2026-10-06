@@ -175,6 +175,25 @@ PARTI_DUYARLI = os.getenv("PARTI_DUYARLI", "1") != "0"
 PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "15"))   # 22 ilanin kaci yeniyse "parti"
 PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "3"))  # 1. sayfa + 2 derin
 PARTI_SAYFA_ARASI = (4.0, 9.0)   # derin sayfalar arasi insan temposu (sn)
+
+# --- 8) YENILEME BICIMI (06.10.2026) ------------------------------------
+# OLCUM (arac_izle.py, kullanicinin KENDI tarayicisi, 7 dk gezinme):
+#   Document istegi : 11  (liste -> ilan detayi -> geri, farkli sayfalar)
+#   XHR istegi      : 144 — bunlarin 13'u DOGRUDAN liste URL'si:
+#       [XHR] /otomobil?sorting=date_desc
+#       [XHR] /otomobil?pagingOffset=40&sorting=date_desc
+# Yani insan sayfa 2'ye gecerken TAM SAYFA yuklemiyor; sitenin kendi
+# XHR'ini atiyor ve DOM degisiyor. Bizim bot ise her turda AYNI liste
+# URL'ine BELGE navigasyonu yapiyordu — insan trafiginde olmayan desen.
+# Gozlem: hem anonim hem ISINMIS/attach oturumda ILK istek geciyor, IKINCI
+# belge istegi bloklaniyor.
+#
+# YENILEME=xhr -> oturumda liste sayfasi BIR KEZ acilir; sonraki her
+# tazeleme sayfanin kendi baglaminda fetch() ile yapilir (ayni cerez, ayni
+# referer, X-Requested-With: XMLHttpRequest). Donen HTML parse edilip
+# kartlar cikarilir; BELGE navigasyonu YOK.
+# YENILEME=get -> eski davranis (her tur driver.get).
+YENILEME = os.getenv("YENILEME", "get").strip().lower()
 ISINMA_URL  = "https://www.sahibinden.com/"
 CACHE_BUST  = os.getenv("CACHE_BUST", "0") != "0"   # 06.10: VARSAYILAN KAPALI (bkz. yukarisi)
 CDP_PORT    = os.getenv("CDP_PORT", "").strip()
@@ -430,6 +449,15 @@ def surucu_olustur(sessiz=False):
         _o.add_experimental_option("debuggerAddress", "127.0.0.1:%s" % CDP_PORT)
         _o.page_load_strategy = "eager"
         driver = _wd.Chrome(options=_o)
+        # Kullanicinin kendi sekmelerine DOKUNMA: bot kendine yeni sekme acar.
+        try:
+            driver.switch_to.new_window("tab")
+            if not sessiz:
+                print("ATTACH: bot kendi sekmesini acti (senin sekmelerin "
+                      "oldugu gibi kaliyor)")
+        except Exception as e:
+            print("[UYARI] yeni sekme acilamadi, mevcut sekme kullanilacak: %s"
+                  % str(e)[:80])
         if not sessiz:
             print("ATTACH: 127.0.0.1:%s — elle acilmis Brave'e baglanildi "
                   "(uc launch YOK, cerezler o tarayicinin)" % CDP_PORT)
@@ -480,6 +508,13 @@ def surucu_olustur(sessiz=False):
 
 
 def surucu_kapat(driver):
+    """uc ile ACILAN tarayiciyi kapatir.
+
+    ATTACH modunda HICBIR SEY YAPMAZ: o tarayici kullanicinin kendi
+    tarayicisi, bot onu kapatamaz (06.10.2026 — quit() cagrisi senin
+    pencerelerini kapatma riskiydi)."""
+    if CDP_PORT:
+        return
     try:
         driver.quit()
     except Exception:
@@ -496,14 +531,52 @@ CF_ISARET = (
 )
 
 
-def challenge_mi(driver):
+# 06.10.2026 — CF ve PX AYRI SEYLER, ayri tepki gerektiriyor:
+#   CF (Cloudflare "Bir dakika lutfen" / "Just a moment"):
+#       kendiliginden 5-46 sn'de GECIYOR. Yapilacak: BEKLE, tiklama,
+#       oturumu TERK ETME. Eski kod bunu hard block sanip sapasaglam
+#       oturumu cope atiyordu (attach modunda kullanicinin tarayicisini!).
+#   PX ("Access to this page has been denied" / px-captcha):
+#       hard block. Oturum damgalandi; her yeni istek damgayi tazeler.
+#       Yapilacak: oturumu birak, katlanan mola, temiz profille don.
+PX_ISARET = ("access to this page has been denied", "px-captcha",
+             "sorry, you have been blocked", "erisim engellendi",
+             "basili tut", "basılı tut")
+CF_SADECE = ("just a moment", "bir dakika", "dakika lutfen", "dakika lütfen",
+             "checking your browser", "baglantiniz kontrol",
+             "bağlantınız kontrol", "kontrol ediliyor", "attention required",
+             "verify you are human")
+
+
+def challenge_turu(driver):
+    """None | 'cf' | 'px'"""
     basl = (driver.title or "").lower()
-    if any(k in basl for k in CF_ISARET):
-        return True
+    govde = ""
     try:
-        return any(k in driver.page_source[:6000].lower() for k in CF_ISARET)
+        govde = driver.page_source[:6000].lower()
     except Exception:
-        return False
+        pass
+    imza = basl + " " + govde
+    if any(k in imza for k in PX_ISARET):
+        return "px"
+    if any(k in basl for k in CF_SADECE) or "cf-browser-verification" in govde:
+        return "cf"
+    return None
+
+
+def cf_bekle(driver, max_bekleme=90):
+    """CF kendiliginden gecene kadar bekle (TIKLAMA YOK). True = gecti."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < max_bekleme:
+        time.sleep(5)
+        try:
+            if driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem"):
+                return True
+            if challenge_turu(driver) is None:
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def hedef_periyot(bos_tur, temkinli_kalan):
@@ -518,6 +591,84 @@ def hedef_periyot(bos_tur, temkinli_kalan):
     if GECE_BASLA <= datetime.now().hour < GECE_BITIS:
         p *= GECE_CARPANI
     return min(p, PERIYOT_TAVANI)
+
+
+# Sayfanin KENDI baglaminda fetch(): sitenin sayfalama istegiyle ayni
+# bicim. Donen HTML'den kartlari JS tarafinda cikarip JSON veriyoruz —
+# boylece DOM'u degistirmeye (ve sayfayi bozmaya) gerek kalmiyor.
+XHR_JS = r"""
+const url = arguments[0];
+const bitti = arguments[arguments.length - 1];
+fetch(url, {
+  method: "GET",
+  credentials: "include",
+  headers: {"X-Requested-With": "XMLHttpRequest"}
+}).then(r => r.text().then(t => ({durum: r.status, metin: t})))
+  .then(({durum, metin}) => {
+    const kap = document.createElement("div");
+    kap.innerHTML = metin;
+    const kartlar = kap.querySelectorAll(".searchResultsItem");
+    const cikti = [];
+    kartlar.forEach(k => {
+      const al = s => { const e = k.querySelector(s); return e ? e.textContent.trim() : ""; };
+      const attr = [];
+      k.querySelectorAll(".searchResultsAttributeValue").forEach(
+        a => { const v = a.textContent.trim(); if (v) attr.push(v); });
+      const a = k.querySelector(".searchResultsTitleValue a");
+      cikti.push({
+        id: k.getAttribute("data-id") || "",
+        baslik: al(".searchResultsTitleValue"),
+        fiyat: al(".searchResultsPriceValue"),
+        attr: attr,
+        href: a ? a.href : ""
+      });
+    });
+    bitti({durum: durum, uzunluk: metin.length, kartlar: cikti,
+           challenge: /denied|px-captcha|basili tut|bas\u0131l\u0131 tut/i.test(metin.slice(0, 4000))});
+  })
+  .catch(e => bitti({hata: String(e)}));
+"""
+
+
+def xhr_liste_cek(driver, url, timeout=25):
+    """Sayfanin kendi baglaminda fetch ile listeyi cek. Doner: dict/None."""
+    try:
+        driver.set_script_timeout(timeout)
+        return driver.execute_async_script(XHR_JS, url)
+    except Exception as e:
+        print("[UYARI] XHR cekme hatasi: %s" % str(e)[:120])
+        return None
+
+
+def xhr_kartlari_isle(kartlar):
+    """xhr_liste_cek ciktisini DB'ye yaz. Doner: (yeni, guncel, en_yeni_id)"""
+    yeni = guncel = 0
+    en_yeni_id = 0
+    for k in kartlar or []:
+        try:
+            ilan_id = (k.get("id") or "").strip()
+            if not ilan_id or not ilan_id.isdigit():
+                continue
+            en_yeni_id = max(en_yeni_id, int(ilan_id))
+            if ilan_id in gorulmus:
+                continue
+            baslik = (k.get("baslik") or "").strip()
+            fiyat_s = re.sub(r"[^\d]", "", k.get("fiyat") or "")
+            if not baslik or not fiyat_s:
+                continue
+            attr = k.get("attr") or []
+            yil = attr[0] if len(attr) >= 1 else ""
+            km = attr[1] if len(attr) >= 2 else ""
+            url = (k.get("href") or "").strip() or \
+                f"https://www.sahibinden.com/ilan/{ilan_id}/detay"
+            if ilan_kaydet(ilan_id, baslik, float(fiyat_s), yil, km, url):
+                yeni += 1
+            else:
+                guncel += 1
+            gorulmus.add(ilan_id)
+        except Exception:
+            continue
+    return yeni, guncel, en_yeni_id
 
 
 def sayfa_isle(items):
@@ -586,9 +737,10 @@ def derin_sayfalari_oku(driver, tur):
             _istek += 1
             _sayfa_bekle(driver, timeout=12)
             items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
-            if not items and challenge_mi(driver):
-                print(f"[TUR {tur}]   derin sayfa {sayfa}: CHALLENGE — "
-                      f"derinlesme durduruldu")
+            _t = challenge_turu(driver) if not items else None
+            if _t:
+                print(f"[TUR {tur}]   derin sayfa {sayfa}: "
+                      f"{'CF' if _t == 'cf' else 'PX'} — derinlesme durduruldu")
                 return toplam_yeni, okunan
             yeni, guncel, _ = sayfa_isle(items)
             okunan += 1
@@ -664,14 +816,38 @@ def pusuya_yat():
             items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
             t_yukle = time.time() - t0
 
-            # -- CHALLENGE: oturumu TERK et, katlanarak bekle, temiz don --
-            if len(items) == 0 and challenge_mi(driver):
+            # -- CHALLENGE: CF ise BEKLE, PX ise oturumu TERK et --
+            _tur_tipi = challenge_turu(driver) if len(items) == 0 else None
+            if _tur_tipi == "cf":
+                # CF kendiliginden geciyor. Oturum saglam, terk ETME.
+                print(f"[TUR {tur}] [~] CLOUDFLARE — kendiliginden gecmesi "
+                      f"bekleniyor (tiklama YOK). Baslik="
+                      f"{(driver.title or '')[:40]}")
+                if cf_bekle(driver, 90):
+                    items = driver.find_elements(By.CSS_SELECTOR,
+                                                 ".searchResultsItem")
+                    print(f"[TUR {tur}] [+] CF gecildi, {len(items)} ilan "
+                          f"gorunuyor — oturum korundu")
+                else:
+                    print(f"[TUR {tur}] [!] CF 90 sn'de gecmedi — tur atlaniyor")
+                    time.sleep(random.uniform(TEMEL_MIN, TEMEL_MAX))
+                    continue
+            elif _tur_tipi == "px":
                 mola = CHALLENGE_MOLA[min(challenge_seri, len(CHALLENGE_MOLA) - 1)]
                 challenge_seri += 1
-                print(f"[TUR {tur}] [!] CHALLENGE ({challenge_seri}. ust uste) — "
+                if CDP_PORT:
+                    # Attach modunda kimlik degistirme imkani YOK (tarayici
+                    # kullanicinin). Tek yapilabilen: beklemek.
+                    print(f"[TUR {tur}] [!] PX BLOCK ({challenge_seri}. ust uste) "
+                          f"— attach modunda oturum degistirilemez, "
+                          f"{mola // 60} dk bekleniyor")
+                    time.sleep(mola)
+                    temkinli_kalan = TEMKINLI_TUR
+                    continue
+                print(f"[TUR {tur}] [!] PX BLOCK ({challenge_seri}. ust uste) — "
                       f"oturum TERK ediliyor, {mola // 60} dk mola. "
                       f"Baslik={(driver.title or '')[:40]}")
-                print("           NOT: challenge COZULMEYE calisilmiyor — damgali "
+                print("           NOT: cozulmeye calisilmiyor — damgali "
                       "oturumda her istek damgayi tazeler.")
                 surucu_kapat(driver)
                 time.sleep(mola)
