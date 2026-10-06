@@ -943,13 +943,27 @@ def devam_et_bas(driver, tur=0):
                 driver.execute_script("arguments[0].click();", dugme)
             except Exception:
                 return False
-        _sayfa_bekle(driver, timeout=25)
-        n = len(driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem"))
-        if n:
-            print(f"[TUR {tur}] [+] 'Devam Et' basildi, {n} ilan geldi — "
-                  f"oturum korundu")
-            return True
-        print(f"[TUR {tur}]   'Devam Et' sonrasi liste gelmedi")
+        # 06.10.2026 — SABIRLI DOGRULAMA. Ilk surum 25 sn bekleyip "gelmedi"
+        # diyordu; oysa canli kontrolde tiklamanin ISE YARADIGI gorulduydu
+        # (sayfa /otomobil'e dondu, 22 ilan). Yonlendirme zinciri 25 sn'den
+        # uzun surebiliyor. Artik URL'in /cs/tloading'den CIKMASI izleniyor.
+        _t0 = time.monotonic()
+        while time.monotonic() - _t0 < 45:
+            time.sleep(2.0)
+            try:
+                if "/cs/tloading" in (driver.current_url or "").lower():
+                    continue
+                _sayfa_bekle(driver, timeout=20)
+                n = len(driver.find_elements(By.CSS_SELECTOR,
+                                             ".searchResultsItem"))
+                if n:
+                    print(f"[TUR {tur}] [+] 'Devam Et' basildi, {n} ilan "
+                          f"geldi ({time.monotonic() - _t0:.0f} sn) — "
+                          f"oturum korundu")
+                    return True
+            except Exception:
+                continue
+        print(f"[TUR {tur}]   'Devam Et' sonrasi liste 45 sn'de gelmedi")
         return False
     except Exception as e:
         print(f"[TUR {tur}]   'Devam Et' hatasi: {str(e)[:90]}")
