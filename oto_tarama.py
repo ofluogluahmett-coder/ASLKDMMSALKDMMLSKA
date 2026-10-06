@@ -211,6 +211,13 @@ DAVRANIS    = os.getenv("DAVRANIS", "1") != "0"
 # 20 ise eski davranis (sayfa boyu degistirilmez).
 SAYFA_BOYU = int(os.getenv("SAYFA_BOYU", "50"))
 
+# ZENGIN=1: her sayfa, otobotun KANITLANMIS ayristiricisindan gecirilip
+# zengin semaya (oto_hafiza.db) da yazilir -> marka/seri/model/motor_hacim/
+# motor_tipi/paket/il/ilce/kimden alanlari dolu olur ve kelepir.py bu veriyi
+# DOGRUDAN skorlayabilir (bucket modelini calisma aninda `ilan` tablosundan
+# kuruyor). Detay: oto_kopru.py. Hata halinde sessizce atlanir, tarama bozulmaz.
+ZENGIN = os.getenv("ZENGIN", "1") != "0"
+
 PARTI_DUYARLI = os.getenv("PARTI_DUYARLI", "1") != "0"
 # Parti esigi ORAN tabanli: sayfa 22 de olabilir 52 de. Sayfanin bu
 # oranindan fazlasi TAZE ise parti sayfayi doldurmus, tasma ihtimali var.
@@ -549,9 +556,26 @@ def sayfa_boyu_ayarla(driver, sessiz=False):
             "arguments[0].scrollIntoView({block:'center'});", dugme)
         time.sleep(random.uniform(0.6, 1.6))
         dugme.click()
-        _sayfa_bekle(driver, timeout=12)
-        time.sleep(random.uniform(1.0, 2.0))
-
+        # 06.10.2026 — DOGRU BEKLEME. _sayfa_bekle() "sayfada kart var mi"
+        # diye bakiyor; ESKI sayfanin kartlari zaten orada oldugu icin aninda
+        # donuyor ve henuz yuklenmemis yeni sayfa yerine eski 22 kart
+        # sayiliyordu (ilk denemede zamanlama sans eseri tutmustu).
+        # Artik URL'in pagingSize icermesini VE kart sayisinin artmasini
+        # bekliyoruz.
+        _t0 = time.monotonic()
+        n = 0
+        while time.monotonic() - _t0 < 20:
+            time.sleep(1.0)
+            try:
+                if f"pagingSize={SAYFA_BOYU}" not in driver.current_url:
+                    continue
+                n = len(driver.find_elements(By.CSS_SELECTOR,
+                                             ".searchResultsItem"))
+                if n > 25:
+                    break
+            except Exception:
+                continue
+        time.sleep(random.uniform(0.8, 1.8))
         n = len(driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem"))
         yeni_url = driver.current_url.split("&_=")[0]
         if n > 25:
@@ -887,6 +911,12 @@ def derin_sayfalari_oku(driver, tur):
                       f"{'CF' if _t == 'cf' else 'PX'} — derinlesme durduruldu")
                 return toplam_yeni, okunan
             yeni, guncel, _, _t = sayfa_isle(items)
+            if ZENGIN:
+                try:
+                    import oto_kopru
+                    oto_kopru.html_isle(driver.page_source)
+                except Exception:
+                    pass
             okunan += 1
             toplam_yeni += yeni
             print(f"[TUR {tur}]   derin sayfa {sayfa} (offset={offset}): "
@@ -1014,6 +1044,15 @@ def pusuya_yat():
             if en_yeni_id > _SU_SEVIYESI:
                 _SU_SEVIYESI = en_yeni_id
 
+            # ZENGIN SEMA: ayni sayfayi otobotun ayristiricisindan gecir
+            z_ek = z_gun = 0
+            if ZENGIN:
+                try:
+                    import oto_kopru
+                    z_ek, z_gun = oto_kopru.html_isle(driver.page_source)
+                except Exception as e:
+                    print(f"[TUR {tur}] [KOPRU] atlandi: {str(e)[:90]}")
+
             # PARTI DUSTU MU? Sayfanin buyuk kismi yeniyse parti gelmis
             # demektir ve tasan kisim derin sayfalarda kaliyor.
             derin_yeni = derin_sayfa = 0
@@ -1053,6 +1092,8 @@ def pusuya_yat():
             # gerekir ama bu PX riskini artirir — karar kullanicinin.
             if derin_sayfa:
                 etiket += f" +derin({derin_sayfa} sayfa, {derin_yeni} ilan)"
+            if z_ek or z_gun:
+                etiket += f" zengin(+{z_ek}/{z_gun})"
             print(f"[TUR {tur}] {datetime.now():%H:%M:%S} ilan={len(items)} "
                   f"taze={taze} yeni={yeni} guncel={guncel} en_yeni_id={en_yeni_id} "
                   f"db_toplam={toplam} istek={_istek} | "
