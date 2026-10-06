@@ -213,9 +213,21 @@ SAYFA_BOYU = int(os.getenv("SAYFA_BOYU", "50"))
 
 PARTI_DUYARLI = os.getenv("PARTI_DUYARLI", "1") != "0"
 # Parti esigi ORAN tabanli: sayfa 22 de olabilir 52 de. Sayfanin bu
-# oranindan fazlasi yeniyse parti sayfayi doldurmus, tasma ihtimali var.
-PARTI_ORAN    = float(os.getenv("PARTI_ORAN", "0.7"))
-PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "15"))   # alt sinir
+# oranindan fazlasi TAZE ise parti sayfayi doldurmus, tasma ihtimali var.
+PARTI_ORAN    = float(os.getenv("PARTI_ORAN", "0.5"))
+PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "10"))   # alt sinir
+
+# 06.10.2026 — "YENI" ILE "TAZE" AYNI SEY DEGIL.
+# Olcum: 22:10 sonrasi toplanan 130 kaydin %36'si ID olarak 1 MILYAR+
+# geride (orn. 1.19B, guncel max 1.344B). Bunlar yeni ilan degil, satici
+# tarafindan "doping"le one cikarilmis ESKI ilanlar — tarih yenilendigi
+# icin date_desc listesinin basinda cikiyorlar.
+# Sonuc: "DB'de yok" olcutu parti algisini yaniltiyordu (bot DB'yi
+# doldurdugu surece her sey yeni gorunuyor; 3. turda 50/52 "yeni" dedi,
+# derin sayfa 0 getirdi = bosa istek).
+# Dogru olcut SU SEVIYESI: gercekten taze ilan, onceki turun en yuksek
+# ID'sinin USTUNDE olandir. Parti algisi artik buna bakiyor.
+_SU_SEVIYESI = 0   # bu oturumda gorulen en yuksek ilan ID'si
 PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "3"))  # 1. sayfa + 2 derin
 # 06.10.2026 OLCUM — ART ARDA HIZLI ISTEK PX TETIKLIYOR:
 #   Chrome (damgasiz), tur 1 OK -> 4-9 sn sonra derin sayfa -> PX
@@ -796,17 +808,23 @@ def xhr_kartlari_isle(kartlar):
     return yeni, guncel, en_yeni_id
 
 
-def sayfa_isle(items):
+def sayfa_isle(items, su_seviyesi=None):
     """Bir liste sayfasindaki kartlari DB'ye yazar.
-    Doner: (yeni, guncel, en_yeni_id)"""
-    yeni = guncel = 0
+
+    su_seviyesi verilirse, ID'si bunun USTUNDE olan kartlar 'taze' sayilir
+    (gercekten yeni yayinlanmis). Verilmezse taze=0 doner.
+    Doner: (yeni, guncel, en_yeni_id, taze)"""
+    yeni = guncel = taze = 0
     en_yeni_id = 0
     for item in items:
         try:
             ilan_id = item.get_attribute("data-id")
             if not ilan_id or not ilan_id.isdigit():
                 continue
-            en_yeni_id = max(en_yeni_id, int(ilan_id))
+            _idn = int(ilan_id)
+            en_yeni_id = max(en_yeni_id, _idn)
+            if su_seviyesi is not None and _idn > su_seviyesi:
+                taze += 1
             if ilan_id in gorulmus:
                 continue
 
@@ -844,7 +862,7 @@ def sayfa_isle(items):
             gorulmus.add(ilan_id)
         except Exception:
             continue
-    return yeni, guncel, en_yeni_id
+    return yeni, guncel, en_yeni_id, taze
 
 
 def derin_sayfalari_oku(driver, tur):
@@ -868,7 +886,7 @@ def derin_sayfalari_oku(driver, tur):
                 print(f"[TUR {tur}]   derin sayfa {sayfa}: "
                       f"{'CF' if _t == 'cf' else 'PX'} — derinlesme durduruldu")
                 return toplam_yeni, okunan
-            yeni, guncel, _ = sayfa_isle(items)
+            yeni, guncel, _, _t = sayfa_isle(items)
             okunan += 1
             toplam_yeni += yeni
             print(f"[TUR {tur}]   derin sayfa {sayfa} (offset={offset}): "
@@ -990,7 +1008,11 @@ def pusuya_yat():
             else:
                 challenge_seri = 0
 
-            yeni, guncel, en_yeni_id = sayfa_isle(items)
+            global _SU_SEVIYESI
+            _onceki_su = _SU_SEVIYESI
+            yeni, guncel, en_yeni_id, taze = sayfa_isle(items, _onceki_su)
+            if en_yeni_id > _SU_SEVIYESI:
+                _SU_SEVIYESI = en_yeni_id
 
             # PARTI DUSTU MU? Sayfanin buyuk kismi yeniyse parti gelmis
             # demektir ve tasan kisim derin sayfalarda kaliyor.
@@ -1000,9 +1022,12 @@ def pusuya_yat():
             # parti sanip derin sayfalara iniyordu: bosa 2 istek, hem de
             # oturumun EN HASSAS aninda. Parti ancak bir onceki turla
             # karsilastirilarak anlasilir.
+            # Parti = TAZE ilan sayisi sayfayi doldurmaya yaklastiysa.
+            # (Ilk turda su seviyesi henuz 0 oldugu icin atlanir.)
             _parti_esigi = max(PARTI_ESIK, int(PARTI_ORAN * len(items))) if items else 0
-            if PARTI_DUYARLI and tur > 1 and items and yeni >= _parti_esigi:
-                print(f"[TUR {tur}] PARTI ALGILANDI ({yeni}/{len(items)} yeni) "
+            if (PARTI_DUYARLI and tur > 1 and items and _onceki_su
+                    and taze >= _parti_esigi):
+                print(f"[TUR {tur}] PARTI ALGILANDI ({taze}/{len(items)} TAZE) "
                       f"— derin sayfalar okunuyor")
                 derin_yeni, derin_sayfa = derin_sayfalari_oku(driver, tur)
                 yeni += derin_yeni
@@ -1029,7 +1054,7 @@ def pusuya_yat():
             if derin_sayfa:
                 etiket += f" +derin({derin_sayfa} sayfa, {derin_yeni} ilan)"
             print(f"[TUR {tur}] {datetime.now():%H:%M:%S} ilan={len(items)} "
-                  f"yeni={yeni} guncel={guncel} en_yeni_id={en_yeni_id} "
+                  f"taze={taze} yeni={yeni} guncel={guncel} en_yeni_id={en_yeni_id} "
                   f"db_toplam={toplam} istek={_istek} | "
                   f"yukle={t_yukle:.2f}s + mola={mola:.0f}s{etiket}")
             if not (MAX_TUR and tur >= MAX_TUR):   # son turda bosuna bekleme
