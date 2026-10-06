@@ -52,7 +52,15 @@ MAX_TUR = int(os.getenv("MAX_TUR", "0"))
 # parametreleri bu beyaz listeye karsi DOGRULANIR; listede olmayan bir
 # parametre varsa bot HIC BASLAMAZ (ortak gelistirmede kazara IP yakmayi
 # onler). Yeni parametreyi once TEK ISTEKLE, gozunun onunde dene.
-GUVENLI_PARAMETRELER = {"sorting", "_"}
+# 06.10.2026 — '_' (cache-bust) LISTEDEN CIKARILDI. Olcum:
+#   CACHE_BUST=0 -> 31 tur / 0 challenge (05.10 gece)
+#   CACHE_BUST=1 -> 2. TURDA hard block (06.10 20:52)
+# Tek fark cache-bust'ti. Mantikli: insan her istekte URL'i degistirmez;
+# her istege farkli bir parametre eklemek "ayni sayfayi surekli yeniden
+# iste" davranisinin imzasi. Tazelik icin cache-bust yerine tarayici
+# cache'i zaten liste sayfasinda devre disi (sunucu no-cache gonderiyor):
+# 31 turluk kosuda cache-bust OLMADAN da her tur 20 yeni ilan geldi.
+GUVENLI_PARAMETRELER = {"sorting"}
 PARAMETRE_KONTROL = os.getenv("PARAMETRE_KONTROL", "1") != "0"
 
 # --- 2) ADAPTIF TEMPO ----------------------------------------------------
@@ -112,7 +120,7 @@ OTO_BOT_KILIDI  = ROOT / "oto_bot.lock"
 #                  guvenilir) Brave'e baglanilir.
 ISINMA      = os.getenv("ISINMA", "1") != "0"
 ISINMA_URL  = "https://www.sahibinden.com/"
-CACHE_BUST  = os.getenv("CACHE_BUST", "1") != "0"
+CACHE_BUST  = os.getenv("CACHE_BUST", "0") != "0"   # 06.10: VARSAYILAN KAPALI (bkz. yukarisi)
 CDP_PORT    = os.getenv("CDP_PORT", "").strip()
 
 # HIZ: gorsel/font/tracker byte'larini engelle (ilan verisi DOM'da kalir).
