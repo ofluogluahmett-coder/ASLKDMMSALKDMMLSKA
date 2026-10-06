@@ -65,15 +65,34 @@ PARAMETRE_KONTROL = os.getenv("PARAMETRE_KONTROL", "1") != "0"
 
 # --- 2) ADAPTIF TEMPO ----------------------------------------------------
 # Taban periyot: turun TOPLAM suresi (tarama+mola) bu hedefte tutulur.
-TEMEL_MIN = float(os.getenv("TEMEL_MIN", "50"))
-TEMEL_MAX = float(os.getenv("TEMEL_MAX", "75"))
+# 06.10.2026 — KULLANICI KARARI: "tarama araligi dar bir marjda rastgele
+# oynasin (80, 83, 86, 81...), buyuk sicramalar olmasin; carpanli uzun
+# molalari kaldir." Sabit periyot da istenmiyor: birebir ayni aralik
+# (orn. her tur tam 80.0 sn) makine imzasidir, hafif jitter insanidir.
+# Not: 80 sn, Aydin'in botundan (90-120) biraz hizli, eski temiz donemden
+# (180-300) belirgin hizli, onceki ayarimizdan (50-75) ise YAVAS.
+TEMEL_MIN = float(os.getenv("TEMEL_MIN", "77"))
+TEMEL_MAX = float(os.getenv("TEMEL_MAX", "86"))
 PERIYOT_TAVANI = 420.0
 # Gece ilan akisi durur -> ayni tempoda taramak bedava risktir.
 GECE_BASLA, GECE_BITIS = 2, 7
 GECE_CARPANI = float(os.getenv("GECE_CARPANI", "2.5"))
-# Ust uste bos tur (yeni ilan yok) -> kategori sogumus, yavasla.
-BOS_TUR_CARPAN = 1.35
-BOS_TUR_TAVAN  = 4          # carpan en fazla 1.35^4
+# 06.10.2026 — KULLANICI KARARI: "yavaslama denen seyi komple kaldiralim,
+# stabilite kadar HIZ da onemli." ADAPTIF=0 -> gece carpani ve bos-tur
+# yavaslatmasi DEVRE DISI; tempo sadece TEMEL_MIN..TEMEL_MAX arasinda
+# rastgele kalir. Challenge sonrasi mola (devre kesici) BU AYARDAN
+# ETKILENMEZ — o mola damgali oturumu terk etmek icin, yavaslatma degil.
+ADAPTIF = os.getenv("ADAPTIF", "0") != "0"   # 06.10: VARSAYILAN KAPALI (dar bant yeter)
+# Ust uste bos tur (yeni ilan yok) -> kategori sogumus olabilir, yavasla.
+# 06.10.2026 DUZELTME — bu kural TERS calisiyordu. Yogun saatte (21:00)
+# `en_yeni_id` donuyor, cunku liste BAYAT; bot bunu "kategori sogudu" sanip
+# molayi 66s->105s->180s'e cikariyordu. Yani tazeleme gerektiginde daha az
+# tazeliyordu ve ekranda "bot durdu" gibi gorunuyordu.
+# Yeni kural: ilk BOS_TUR_ESIK bos turda yavaslama YOK; sonrasinda nazik
+# (en fazla ~1.5 kat). Gercek gece sakinligini GECE_CARPANI zaten hallediyor.
+BOS_TUR_ESIK   = 6          # bu kadar bos tura kadar tempo DEGISMEZ
+BOS_TUR_CARPAN = 1.15
+BOS_TUR_TAVAN  = 3          # carpan en fazla 1.15^3 (~1.52)
 
 # --- 3) CHALLENGE DEVRE KESICI -------------------------------------------
 # Challenge gorunce YAPILMAYACAK sey: ayni oturumla tekrar denemek. Damgali
@@ -393,8 +412,10 @@ def challenge_mi(driver):
 def hedef_periyot(bos_tur, temkinli_kalan):
     """Turun TOPLAM suresi icin hedef (sn). Risk arttikca uzar."""
     p = random.uniform(TEMEL_MIN, TEMEL_MAX)
-    if bos_tur:
-        p *= BOS_TUR_CARPAN ** min(bos_tur, BOS_TUR_TAVAN)
+    if not ADAPTIF:
+        return p                      # duz rastgele tempo, carpan yok
+    if bos_tur >= BOS_TUR_ESIK:
+        p *= BOS_TUR_CARPAN ** min(bos_tur - BOS_TUR_ESIK + 1, BOS_TUR_TAVAN)
     if temkinli_kalan > 0:
         p *= TEMKINLI_CARPAN
     if GECE_BASLA <= datetime.now().hour < GECE_BITIS:
@@ -417,6 +438,8 @@ def pusuya_yat():
     print(f"PX kacinma: parametre_kontrol={'acik' if PARAMETRE_KONTROL else 'KAPALI'} | "
           f"oturum_tazeleme={OTURUM_TAZELE_DK:.0f}dk | gece x{GECE_CARPANI} | "
           f"challenge_molasi={CHALLENGE_MOLA}")
+    print("Tempo: %.0f-%.0f sn | adaptif=%s"
+          % (TEMEL_MIN, TEMEL_MAX, "acik" if ADAPTIF else "KAPALI"))
     print("Insan modu: isinma=%s | cache_bust=%s | mod=%s"
           % ("acik" if ISINMA else "KAPALI",
              "acik" if CACHE_BUST else "KAPALI",
