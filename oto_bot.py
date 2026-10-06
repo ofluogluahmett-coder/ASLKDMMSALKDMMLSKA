@@ -117,6 +117,18 @@ if os.getenv("TEK_SAYFA", "0") == "1":
 # Kalici profil davranisi icin ANONIM_MOD=0 (varsayilan).
 ANONIM_MOD = os.getenv("ANONIM_MOD", "0") == "1"
 
+# 05.10.2026 — ISINMA HER OTURUMDA (kok neden duzeltmesi).
+# _isinma_turu() 21.09'da yazilmis ama SADECE proxy degisiminde tetikleniyordu
+# (`_isinma_gerek`). Proxy 23.09'da kaldirilinca (PROXY_LIST bos) o bayrak bir
+# daha hic kalkmadi -> isinma HIC calismadi -> her acilis ve her restart
+# dogrudan kategoriye daldi (soguk giris).
+# OLCUM (05.10.2026): soguk giris = tek istekte "Access to this page has been
+# denied"; ana sayfadan isinarak giris = 31 tur / 0 challenge. Ayrica eski
+# log'lar ayni seyi soyluyor: 14-17.09 (restart yok, uzun oturum) 1059 tur /
+# 0 PX; 22-25.09 (her 3 turda proxy rotasyonu = her 3 turda soguk giris)
+# 166 tur / 90 PX, en uzun temiz seri 8 tur.
+ISINMA_HER_OTURUM = os.getenv("ISINMA", "1") != "0"
+
 RENDER_BEKLEME_TAVANI = 10
 RENDER_SETTLE_MIN     = 2.5
 RENDER_SETTLE_MAX     = 4.0
@@ -4382,7 +4394,9 @@ def main():
                 # oturum" puanini yukseltir; soguk giris hard block riskini
                 # azaltir. Sadece proxy DEGISTIGINDE calisir (ilk acilista
                 # degil — orada zaten CF_SONRASI_INCELEME var).
-                if _isinma_gerek:
+                # 05.10.2026 — ARTIK HER YENI DRIVER'DA isinma yapilir
+                # (eskiden sadece proxy degisiminde; bkz. ISINMA_HER_OTURUM).
+                if ISINMA_HER_OTURUM or _isinma_gerek:
                     _isinma_turu(driver, stop_event)
                     _isinma_gerek = False
                 driver.get(_sayfa_url(0))
