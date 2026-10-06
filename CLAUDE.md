@@ -1,7 +1,118 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 05.10.2026 — PX kök nedeni bulundu: soğuk giriş.
+**Son güncelleme:** 06.10.2026 — PX kuralları ölçüldü, kapsama kaybı kapatıldı, kelepir köprüsü kuruldu.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 06.10.2026 (gece) — ÖLÇÜLEN KURALLAR, KAPSAMA ve KELEPİR KÖPRÜSÜ
+
+Ayrıntılı kanıt tabloları: [docs/px_kacinma.md](docs/px_kacinma.md)
+
+### ⚠️ EN ÖNEMLİ DÜZELTME: PX kendiliğinden geçmiyor
+
+Gece boyunca iki olayı (21:22, 22:34) "devre kesici çalıştı, bot kendi
+toparlandı, elle müdahale gerekmiyor" diye kaydetmiştim. **Yanlış.**
+Kullanıcı: *"O PX'i ELLE geçtim. PX herhangi bir şekilde kendisi geçilmiyor,
+çok çok nadir bir hadise."* Sabah ölçümü de bunu söylüyordu ama yanlış
+okumuşum: PX'ten **3 saat sonra** aynı tarayıcı hâlâ blokluydu ve **taze
+profil bile kurtarmıyordu**.
+
+Doğru strateji sırası: **(1) önleme** → **(2) kimlik değiştirme** →
+**(3) insan**. Blok yedikten sonra otomatik çıkış YOK.
+
+### Elenenler (hiçbiri 2. isteği kurtarmadı)
+
+IP (Brave bloklu iken aynı IP'den Chrome sorunsuz) · çerezler (botun
+`_px3`/`_pxvid`/`pxcts`/`cf_clearance` takımı eksiksiz, 34 çerez) · tarayıcı
+cache'i (sunucu `no-store` gönderiyor, 7 dk insan gezintisinde tek 304 yok →
+cache-bust ve `setCacheDisabled` aylardır sadece risk üretmiş) · tempo ·
+görsel/font engeli · tur içi davranış taklidi.
+
+### Ölçülen kurallar
+
+1. **Soğuk giriş kök nedendi** (05.10). Isınma eklendi: oturum ana sayfadan
+   başlar, 4-9 sn beklenir, hafif scroll yapılır, sonra kategoriye geçilir.
+   Otobotta `_isinma_turu()` 21.09'dan beri VARDI ama sadece proxy
+   değişiminde tetikleniyordu; proxy 23.09'da kaldırılınca hiç çalışmaz
+   olmuştu. `ISINMA=1` ile her oturumda devrede.
+2. **Art arda hızlı istek PX tetikliyor.** Chrome: tur 1 OK → 4-9 sn sonra
+   derin sayfa → PX; aynı oturumda 56 sn sonra tur 2 → sorunsuz.
+   `PARTI_SAYFA_ARASI` 30-50 sn yapıldı, sonra derin sayfa PX'siz okundu.
+3. **Damga tarayıcı parmak izine yapışıyor.** Kullanıcı elle bile Brave'de
+   hard PX yiyor, Chrome sorunsuz. "Her yeni oturum doğuştan bloklu"
+   bilmecesinin cevabı bu: temiz geçici profil çerez taşımıyor ama uc+Brave
+   her açılışta **aynı imzayı** üretiyor.
+4. **Üç ayrı engel tipi var**, üçü ayrı tepki gerektiriyor:
+   | Engel | Belirti | Tepki |
+   |---|---|---|
+   | Ara sayfa | `/cs/tloading`, "Tarayıcınızı kontrol ediyoruz", `#btn-continue` | **Devam Et'e bas**, aynı turda devam |
+   | Cloudflare | "Bir dakika lütfen" | Sayfada kal, 90 sn'ye kadar bekle, TIKLAMA |
+   | PerimeterX | "Access to this page has been denied" | Kimlik değiştir (bekleme çözmez) |
+   Ara sayfa, anlaşılamayan boş turların sebebiydi (yükle=12.4s/35.6s,
+   ilan=0): bot orada takılıyor, tespit tanımadığı için tur çöpe gidiyordu.
+5. **İlanlar parti halinde düşüyor ve 22'lik sayfa yetmiyor.** Kesintisiz 31
+   turluk koşuda partiler ~6-7 dk arayla ve her biri TAM 20 çıkıyordu —
+   sayfa 22 tutuyor. Ölçüm: bir parti 28 ilandı, **8'ini kaybediyorduk**.
+6. **"Yeni" ile "taze" aynı şey değil.** `date_desc` listesinin başında
+   doping'le öne çıkarılmış ESKİ ilanlar var: toplanan 130 kaydın %36'sı ID
+   olarak 1 milyar+ geride. Parti algısı artık **ID su seviyesine** bakıyor.
+
+### Kapsama: 50'lik liste (kullanıcı ısrarı)
+
+`pagingSize`'ı sabah "tek istekte IP yakıyor" diye kara listeye almıştım —
+**yanlış atıf**. Canlı DOM'da sayfanın en altında sitenin kendi kontrolü
+bulundu: `<a class="paging-size Limit50Passive" href="...&pagingSize=50">50</a>`.
+Blok parametreden değil, onu soğuk girişte denememden geliyordu. İnsan
+yolundan (kademeli en alta kaydır → düğmeyi görüş alanına al → tıkla)
+denendi: **22 → 51-52 ilan, PX yok.** Ölçülen 28'lik parti artık tek isteğe
+sığıyor. `pagingOffset` de sitenin kendi parametresi (kullanıcı elle kullandı).
+
+### Tarayıcı havuzu (kullanıcı fikri)
+
+PX kendiliğinden geçmediği için tek otomatik çıkış kimlik değiştirmek.
+Blok yiyen tarayıcı diske işaretlenir (`tarayici_durum.json`), dinlenmesi
+kademeli uzar (2sa/4sa/8sa), alternatif hazırsa **hemen** geçilir. Tüm
+kimlikler yanmışsa bot bağırarak haber verir (konsol uyarısı +
+`ELLE_MUDAHALE_GEREKLI.txt`) — kullanıcının ölçütü "günde en fazla 3-4 elle
+müdahale" olduğu için müdahale anını bilmesi gerekiyor.
+
+### Kelepir köprüsü (`oto_kopru.py`)
+
+Liste sayfası marka/seri/model'i `searchResultsTagAttributeValue`, yıl/km'yi
+attribute, il/ilçe'yi location hücresinde, galeri/sahibinden ayrımını store
+ikonunda taşıyor — **detay sayfasına inmeye gerek yok.** Ayrıştırıcı yeniden
+yazılmadı: `oto_bot` içe aktarılıp (`__main__` koruması var, bot çalışmıyor)
+`parse_ilanlar()` + `ilan_yaz()` kullanılıyor; fiyat düşüşü takibi ve çöp
+filtresi bedavaya geliyor. `kelepir.py` bucket modelini çalışma anında `ilan`
+tablosundan kurduğu için ekstra tablo beslemeye gerek yok.
+Test: 51 ilan yazıldı, skorlanabilir havuz 20.365 → 20.416. Canlı koşuda
+`zengin(+49/1)`.
+
+### Yeni aletler
+
+| Alet | Ne yapar |
+|---|---|
+| `arac_px_olcum.py` | Bir parametre güvenli mi? TEK istekle ölçer, 20 dk bekleme kuralı alete gömülü |
+| `arac_parmak_izi.py` | Sıfır riskli otomasyon izi denetimi (sahibinden'e istek atmaz; `--https` şart) |
+| `arac_izle.py` | ELLE gezilen tarayıcıyı pasif dinler — sayfanın kendi XHR'ları, cache başlıkları, çerez isimleri |
+| `arac_px_rapor.py` | Log'dan: challenge sayısı, elle müdahale, tazelik (donma analizi). **Not:** "kendi toparladı" sayacı yanıltıcı — bkz. düzeltme |
+| `oto_kopru.py` | Sayfa HTML'i → zengin şema |
+| `baslat_brave_izle.bat` | Kendi profilin + debug portu |
+
+### Denenmemiş kol — XHR modu
+
+İnsan oturumu 7 dk'da 11 belge + 144 XHR yapıyor; XHR'ların 13'ü doğrudan
+liste URL'si. Yani insan sayfa değiştirirken tam sayfa yüklemiyor, sitenin
+kendi XHR'ını atıyor. `YENILEME=xhr` altyapısı yazıldı (`xhr_liste_cek`),
+ana döngüye bağlanmadı.
+
+### Ölçülemeyen
+
+Saat bazlı ilan profili: bot sadece test saatlerinde açık olduğu için
+`ilk_gorulme` dağılımı "bot ne zaman ayaktaydı"yı gösteriyor; `ilan_tarih`
+yalnızca gün tutuyor. Bu yüzden **saat varsayımlı kural YOK** — parti algısı
+gördüğüne tepki veriyor.
 
 ---
 
