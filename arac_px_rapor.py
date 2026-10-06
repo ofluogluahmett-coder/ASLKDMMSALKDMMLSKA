@@ -26,7 +26,8 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-TUR_RE = re.compile(r"^\[TUR (\d+)\] (\d\d:\d\d:\d\d) ilan=(\d+) yeni=(\d+)")
+TUR_RE = re.compile(r"^\[TUR (\d+)\] (\d\d:\d\d:\d\d) ilan=(\d+) yeni=(\d+)"
+                    r".*?en_yeni_id=(\d+)")
 CHAL_RE = re.compile(r"^\[TUR (\d+)\] \[!\] CHALLENGE \((\d+)\. ust uste\)")
 BOS_RE = re.compile(r"^\[TUR (\d+)\] \[!\] 0 ilan")
 ISINMA_RE = re.compile(r"^ISINMA: ana sayfa gezildi")
@@ -55,7 +56,8 @@ def main():
             m = TUR_RE.match(satir)
             if m:
                 turlar.append((int(m.group(1)), _sn(m.group(2)),
-                               int(m.group(3)), int(m.group(4))))
+                               int(m.group(3)), int(m.group(4)),
+                               int(m.group(5))))
                 olaylar.append(("tur", int(m.group(1))))
                 continue
             m = CHAL_RE.match(satir)
@@ -99,6 +101,34 @@ def main():
             toparlanan += 1
     elle = len(challenge) - toparlanan
 
+    # ── TAZELIK: en_yeni_id turlar arasinda ILERLIYOR mu? ──
+    # Bayat liste belirtisi: id ayni kalirken turlar gecer. Yogun saatte
+    # /otomobil'de 2-3 dakika hic yeni ilan girmemesi gercekci degil.
+    ilerledi = donuk = 0
+    en_uzun_donma_sn = 0
+    donma_basi = None
+    onceki_id = None
+    for t in turlar:
+        yid = t[4]
+        if onceki_id is None or yid > onceki_id:
+            ilerledi += 1
+            if donma_basi is not None:
+                sure = t[1] - donma_basi
+                if sure < 0:
+                    sure += 24 * 3600
+                en_uzun_donma_sn = max(en_uzun_donma_sn, sure)
+                donma_basi = None
+        else:
+            donuk += 1
+            if donma_basi is None:
+                donma_basi = t[1]
+        onceki_id = max(onceki_id or 0, yid)
+    if donma_basi is not None:   # log sonunda hala donuk
+        sure = turlar[-1][1] - donma_basi
+        if sure < 0:
+            sure += 24 * 3600
+        en_uzun_donma_sn = max(en_uzun_donma_sn, sure)
+
     yeni_toplam = sum(t[3] for t in turlar)
     print("=" * 66)
     print(f"PX RAPORU — {yol.name}")
@@ -108,6 +138,14 @@ def main():
     print(f"Toplanan yeni ilan   : {yeni_toplam}")
     print(f"Yeni oturum (isinma) : {isinma}")
     print(f"Bos sayfa turu       : {len(bos)}")
+    print("-" * 66)
+    print(f"TAZELIK  ilerleyen tur : {ilerledi}/{len(turlar)}"
+          f"  ({100.0 * ilerledi / len(turlar):.0f}%)")
+    print(f"         donuk tur     : {donuk}")
+    print(f"         en uzun donma : {en_uzun_donma_sn // 60} dk "
+          f"{en_uzun_donma_sn % 60} sn")
+    if en_uzun_donma_sn >= 180:
+        print("         -> BAYAT LISTE belirtisi (yogun saatte 3+ dk donma)")
     print("-" * 66)
     print(f"CHALLENGE olayi      : {len(challenge)}")
     print(f"  kendi toparladi    : {toparlanan}")
