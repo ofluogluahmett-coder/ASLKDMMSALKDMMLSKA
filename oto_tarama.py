@@ -532,7 +532,7 @@ def sayfa_boyu_ayarla(driver, sessiz=False):
         return None
     try:
         driver.get(ANA_URL)
-        _sayfa_bekle(driver, timeout=12)
+        _sayfa_bekle(driver, timeout=20)
         time.sleep(random.uniform(1.5, 3.0))          # sayfaya goz at
 
         # Kademeli olarak en alta kaydir (tek hamlede ziplama bot imzasi)
@@ -543,13 +543,42 @@ def sayfa_boyu_ayarla(driver, sessiz=False):
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(random.uniform(1.0, 2.5))
 
-        secici = SAYFA_BOYU_SECICI % SAYFA_BOYU
-        try:
-            dugme = driver.find_element(By.CSS_SELECTOR, secici)
-        except Exception:
+        # 06.10.2026 — ESNEK ARAMA. Tek sinif kombinasyonuna (Limit50Passive)
+        # bel baglamak kirilgan: "Passive" sinifi secenek SECILI DEGILKEN
+        # olusuyor, durum degisince sinif da degisiyor. Sirayla denenir.
+        dugme = None
+        for yontem, sec in (
+            ("href", f"a[href*='pagingSize={SAYFA_BOYU}']"),
+            ("sinif", SAYFA_BOYU_SECICI % SAYFA_BOYU),
+            ("sinif-genel", "a.paging-size"),
+        ):
+            try:
+                adaylar = driver.find_elements(By.CSS_SELECTOR, sec)
+            except Exception:
+                continue
+            for a in adaylar:
+                try:
+                    if yontem == "sinif-genel" and a.text.strip() != str(SAYFA_BOYU):
+                        continue
+                    dugme = a
+                    break
+                except Exception:
+                    continue
+            if dugme is not None:
+                break
+        if dugme is None:
             if not sessiz:
-                print(f"[UYARI] sayfa boyu dugmesi bulunamadi ({secici}) — "
-                      f"20'lik liste ile devam")
+                # Ne varmis? Tek seferlik teshis — bir daha ayni hataya
+                # korlemeden bakmayalim.
+                try:
+                    hepsi = driver.find_elements(By.CSS_SELECTOR,
+                                                 "a.paging-size, [class*='Limit']")
+                    ozet = [(a.get_attribute("class") or "")[:40] + "|" +
+                            (a.text or "").strip()[:6] for a in hepsi[:6]]
+                except Exception:
+                    ozet = []
+                print(f"[UYARI] sayfa boyu dugmesi bulunamadi — 20'lik liste "
+                      f"ile devam. Sayfadaki adaylar: {ozet}")
             return None
         # Dugmeyi gorus alaninin ortasina al, sonra tikla
         driver.execute_script(
@@ -988,8 +1017,21 @@ def pusuya_yat():
                     else AKTIF_URL)
             driver.get(_url)
             _istek += 1
-            _sayfa_bekle(driver, timeout=12)
+            _sayfa_bekle(driver, timeout=20)
             items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
+            # 06.10.2026 — IKINCI SANS. Soguk oturumda sayfa 12 sn'de
+            # yetismiyordu; basligi "sahibinden.com Yukleniyor" iken 0 ilan
+            # okuyup turu bosa harciyorduk (olcum: yukle=12.37s, ilan=0).
+            # Challenge DEGILSE biraz daha bekleyip tekrar oku.
+            if not items:
+                _bas = (driver.title or "").lower()
+                if "yükleniyor" in _bas or "yukleniyor" in _bas or not _bas:
+                    _sayfa_bekle(driver, timeout=15)
+                    items = driver.find_elements(By.CSS_SELECTOR,
+                                                 ".searchResultsItem")
+                    if items:
+                        print(f"[TUR {tur}] sayfa gec yuklendi, ikinci "
+                              f"okumada {len(items)} ilan")
             t_yukle = time.time() - t0
 
             # -- CHALLENGE: CF ise BEKLE, PX ise oturumu TERK et --
