@@ -538,6 +538,12 @@ def isin(driver, sessiz=False):
         return
     try:
         driver.get(ISINMA_URL)
+        # Ara sayfa ana sayfada da cikabilir — gec, yoksa isinma bos gecer.
+        try:
+            if challenge_turu(driver) == "devam":
+                devam_et_bas(driver)
+        except Exception:
+            pass
         time.sleep(random.uniform(4, 9))         # goz gezdirme
         for _ in range(random.randint(1, 3)):    # hafif scroll
             driver.execute_script(
@@ -626,7 +632,13 @@ def sayfa_boyu_ayarla(driver, sessiz=False):
     try:
         driver.get(ANA_URL)
         _sayfa_bekle(driver, timeout=20)
-        # 06.10.2026 — SAYFALAMA KONTROLUNU BEKLE. page_load_strategy="eager"
+        # 06.10.2026 — ARA SAYFA KONTROLU. Bu fonksiyon kendi get'ini yapiyor;
+        # /cs/tloading'e dusunce sayfalama baglantisi HIC gelmeyecegi icin
+        # 15 sn bekleyip 20'lik listeye dusuyordu.
+        if not driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem"):
+            if challenge_turu(driver) == "devam":
+                devam_et_bas(driver)
+        # SAYFALAMA KONTROLUNU BEKLE. page_load_strategy="eager"
         # ile DOM akmaya devam ederken sayfanin ALTINDAKI sayfalama bolumu
         # henuz gelmemis oluyordu; teshis "sayfadaki adaylar: []" dedi, yani
         # oge DOM'da yoktu. Onceki denemede bulmasi zamanlama sansiydi.
