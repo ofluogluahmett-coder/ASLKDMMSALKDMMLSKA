@@ -71,7 +71,21 @@ MAX_TUR = int(os.getenv("MAX_TUR", "0"))
 # parametreleri bu beyaz listeye karsi DOGRULANIR; listede olmayan bir
 # parametre varsa bot HIC BASLAMAZ (ortak gelistirmede kazara IP yakmayi
 # onler). Yeni parametreyi once TEK ISTEKLE, gozunun onunde dene.
-# 06.10.2026 — '_' (cache-bust) LISTEDEN CIKARILDI. Olcum:
+# 06.10.2026 AKSAM — DUZELTME: pagingSize ZEHIRLI DEGIL, SITENIN KENDI
+# PARAMETRESI. Canli DOM'da sayfa-boyu kontrolu bulundu (sayfanin EN ALTINDA):
+#   <a class="paging-size Limit50Passive"
+#      href="/otomobil?pagingOffset=0&pagingSize=50&sorting=date_desc">50</a>
+# Yani "50" dugmesine basan HER kullanici bu adrese gidiyor. Sabah bu
+# parametreyi "tek istekte IP yakiyor" diye listeden cikarmistim; yanlis
+# atifti — blok parametreden degil, onu SOGUK GIRISTE (sifir gecmisli profil
+# + dogrudan derin URL + cache-bust) denememden geliyordu.
+# Isinmis oturumda sitenin kendi dugmesine TIKLAYARAK test edildi:
+#   once : 22 ilan  /otomobil?sorting=date_desc
+#   sonra: 52 ilan  /otomobil?sorting=date_desc&pagingSize=50   PX YOK
+# pagingOffset de sitenin kendi parametresi (kullanici elle gezerken
+# kullandi, PX yok).
+#
+# '_' (cache-bust) ise LISTEDE DEGIL. Olcum:
 #   CACHE_BUST=0 -> 31 tur / 0 challenge (05.10 gece)
 #   CACHE_BUST=1 -> 2. TURDA hard block (06.10 20:52)
 # Tek fark cache-bust'ti. Mantikli: insan her istekte URL'i degistirmez;
@@ -79,7 +93,7 @@ MAX_TUR = int(os.getenv("MAX_TUR", "0"))
 # iste" davranisinin imzasi. Tazelik icin cache-bust yerine tarayici
 # cache'i zaten liste sayfasinda devre disi (sunucu no-cache gonderiyor):
 # 31 turluk kosuda cache-bust OLMADAN da her tur 20 yeni ilan geldi.
-GUVENLI_PARAMETRELER = {"sorting"}
+GUVENLI_PARAMETRELER = {"sorting", "pagingSize", "pagingOffset"}
 PARAMETRE_KONTROL = os.getenv("PARAMETRE_KONTROL", "1") != "0"
 
 # --- 2) ADAPTIF TEMPO ----------------------------------------------------
@@ -190,8 +204,18 @@ DAVRANIS    = os.getenv("DAVRANIS", "1") != "0"
 #   - Bos turlarda hicbir sey degismez (sabit dar bant tempo).
 # pagingOffset guvenli: kullanici ELLE pagingOffset=20 ile gezdi, PX yok
 # (06.10, arac_izle.py ile dogrulandi).
+# SAYFA_BOYU: 50 ise oturum basinda sayfa INSAN GIBI en alta kaydirilir ve
+# sitenin kendi "50" dugmesine tiklanir; liste 52 ilan doner.
+# Kazanc: olculen 28'lik parti TEK istege sigiyor -> derin sayfaya inme
+# ihtiyaci buyuk olcude biter, toplam istek sayisi duser, kayip biter.
+# 20 ise eski davranis (sayfa boyu degistirilmez).
+SAYFA_BOYU = int(os.getenv("SAYFA_BOYU", "50"))
+
 PARTI_DUYARLI = os.getenv("PARTI_DUYARLI", "1") != "0"
-PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "15"))   # 22 ilanin kaci yeniyse "parti"
+# Parti esigi ORAN tabanli: sayfa 22 de olabilir 52 de. Sayfanin bu
+# oranindan fazlasi yeniyse parti sayfayi doldurmus, tasma ihtimali var.
+PARTI_ORAN    = float(os.getenv("PARTI_ORAN", "0.7"))
+PARTI_ESIK    = int(os.getenv("PARTI_ESIK", "15"))   # alt sinir
 PARTI_MAX_SAYFA = int(os.getenv("PARTI_MAX_SAYFA", "3"))  # 1. sayfa + 2 derin
 # 06.10.2026 OLCUM — ART ARDA HIZLI ISTEK PX TETIKLIYOR:
 #   Chrome (damgasiz), tur 1 OK -> 4-9 sn sonra derin sayfa -> PX
@@ -246,6 +270,10 @@ BLOCK_URLS = [
     "*google-analytics*", "*googletagmanager*", "*doubleclick*",
     "*facebook.net*", "*hotjar*", "*criteo*",
 ]
+
+# Oturumun AKTIF liste URL'si. Sayfa boyu buyutulurse (sitenin kendi
+# dugmesine tiklayarak) bu URL pagingSize icerir ve tum turlar bunu kullanir.
+AKTIF_URL = ANA_URL
 
 gorulmus = set()   # bu oturumda islenen data-id'ler
 _istek = 0         # bu calismada atilan sayfa istegi sayisi
@@ -461,6 +489,71 @@ def insan_gibi_davran(driver, pencere_sn):
     return time.monotonic() - t0
 
 
+# Sitenin kendi sayfa-boyu dugmesi (canli DOM'dan alindi)
+SAYFA_BOYU_SECICI = "a.paging-size.Limit%dPassive"
+
+
+def _url_offset(url, offset):
+    """URL'deki pagingOffset'i degistir/ekle (digerlerine dokunmadan)."""
+    temiz = re.sub(r"[?&]pagingOffset=\d+", "", url)
+    ayirac = "&" if "?" in temiz else "?"
+    return f"{temiz}{ayirac}pagingOffset={offset}"
+
+
+def sayfa_boyu_ayarla(driver, sessiz=False):
+    """Sayfa boyunu INSAN YOLUYLA buyut: sayfaya gir, en alta kadar
+    kademeli kaydir, dugmeyi gorus alanina al, tikla.
+
+    Neden kaydirma sart: o kontrol sayfanin EN ALTINDA. Hic kaydirmadan
+    gorus alanina girmemis bir ogeye tiklamak tek basina otomasyon imzasi
+    (kullanici onerisi, 06.10.2026).
+
+    Doner: yeni liste URL'si (pagingSize dahil) veya None."""
+    if SAYFA_BOYU <= 20:
+        return None
+    try:
+        driver.get(ANA_URL)
+        _sayfa_bekle(driver, timeout=12)
+        time.sleep(random.uniform(1.5, 3.0))          # sayfaya goz at
+
+        # Kademeli olarak en alta kaydir (tek hamlede ziplama bot imzasi)
+        for _ in range(random.randint(4, 7)):
+            driver.execute_script("window.scrollBy(0, %d);"
+                                  % random.randint(400, 900))
+            time.sleep(random.uniform(0.5, 1.4))
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(random.uniform(1.0, 2.5))
+
+        secici = SAYFA_BOYU_SECICI % SAYFA_BOYU
+        try:
+            dugme = driver.find_element(By.CSS_SELECTOR, secici)
+        except Exception:
+            if not sessiz:
+                print(f"[UYARI] sayfa boyu dugmesi bulunamadi ({secici}) — "
+                      f"20'lik liste ile devam")
+            return None
+        # Dugmeyi gorus alaninin ortasina al, sonra tikla
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'});", dugme)
+        time.sleep(random.uniform(0.6, 1.6))
+        dugme.click()
+        _sayfa_bekle(driver, timeout=12)
+        time.sleep(random.uniform(1.0, 2.0))
+
+        n = len(driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem"))
+        yeni_url = driver.current_url.split("&_=")[0]
+        if n > 25:
+            if not sessiz:
+                print(f"SAYFA BOYU: {SAYFA_BOYU} secildi (en alta kaydirip "
+                      f"tiklayarak) — sayfada {n} ilan")
+            return yeni_url
+        if not sessiz:
+            print(f"[UYARI] tiklamadan sonra {n} ilan — 20'lik liste ile devam")
+    except Exception as e:
+        print(f"[UYARI] sayfa boyu ayarlanamadi: {str(e)[:100]}")
+    return None
+
+
 def surucu_olustur(sessiz=False):
     # --- ATTACH MODU: yeni tarayici acma, ELLE acilmis olana baglan ---
     # Gerekce: kullanicinin kendi Brave'i ayni IP'de /otomobil'de serbest
@@ -532,6 +625,10 @@ def surucu_olustur(sessiz=False):
     except Exception as e:
         print(f"[UYARI] debug portu okunamadi: {e}")
     isin(driver, sessiz)       # soguk giris yapma: once ana sayfa
+    # Sayfa boyunu insan yoluyla buyut (en alta kaydir + sitenin dugmesi)
+    global AKTIF_URL
+    _u = sayfa_boyu_ayarla(driver, sessiz)
+    AKTIF_URL = _u or ANA_URL
     return driver
 
 
@@ -757,11 +854,12 @@ def derin_sayfalari_oku(driver, tur):
     global _istek
     toplam_yeni = 0
     okunan = 0
+    adim = SAYFA_BOYU if SAYFA_BOYU > 20 else 20
     for sayfa in range(2, PARTI_MAX_SAYFA + 1):
-        offset = (sayfa - 1) * 20
+        offset = (sayfa - 1) * adim
         time.sleep(random.uniform(*PARTI_SAYFA_ARASI))   # insan temposu
         try:
-            driver.get(f"{ANA_URL}&pagingOffset={offset}")
+            driver.get(_url_offset(AKTIF_URL, offset))
             _istek += 1
             _sayfa_bekle(driver, timeout=12)
             items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
@@ -776,7 +874,7 @@ def derin_sayfalari_oku(driver, tur):
             print(f"[TUR {tur}]   derin sayfa {sayfa} (offset={offset}): "
                   f"ilan={len(items)} yeni={yeni}")
             # Bu sayfa da doluysa devam; degilse partinin sonuna geldik
-            if yeni < PARTI_ESIK:
+            if yeni < max(PARTI_ESIK, int(PARTI_ORAN * max(len(items), 1))):
                 break
         except Exception as e:
             print(f"[TUR {tur}]   derin sayfa {sayfa} HATA: {str(e)[:80]}")
@@ -805,7 +903,9 @@ def pusuya_yat():
           % ("acik" if ISINMA else "KAPALI",
              "acik" if CACHE_BUST else "KAPALI",
              ("ATTACH:" + CDP_PORT) if CDP_PORT else "uc-launch"))
-    print(f"URL: {ANA_URL}")
+    print(f"Sayfa boyu: {SAYFA_BOYU} | parti esigi: sayfanin %%%d'i "
+          f"(min %d)" % (int(PARTI_ORAN * 100), PARTI_ESIK))
+    print(f"URL: {AKTIF_URL}")
 
     tur = 0
     bos_tur = 0            # ust uste yeni ilan gelmeyen tur sayisi
@@ -836,8 +936,8 @@ def pusuya_yat():
             # Cache-buster: her tur farkli URL -> origin taze cevaba zorlanir.
             # CACHE_BUST=0 ise eklenmez (elle gezen insanda bu parametre yok).
             t0 = time.time()
-            _url = (f"{ANA_URL}&_={int(time.time() * 1000)}" if CACHE_BUST
-                    else ANA_URL)
+            _url = (f"{AKTIF_URL}&_={int(time.time() * 1000)}" if CACHE_BUST
+                    else AKTIF_URL)
             driver.get(_url)
             _istek += 1
             _sayfa_bekle(driver, timeout=12)
@@ -895,7 +995,13 @@ def pusuya_yat():
             # PARTI DUSTU MU? Sayfanin buyuk kismi yeniyse parti gelmis
             # demektir ve tasan kisim derin sayfalarda kaliyor.
             derin_yeni = derin_sayfa = 0
-            if PARTI_DUYARLI and items and yeni >= PARTI_ESIK:
+            # 06.10.2026 — 1. TURDA PARTI ALGISI YOK. Oturum yeni oldugu icin
+            # sayfadaki her sey "yeni" gorunur (gorulmus seti bos); bot bunu
+            # parti sanip derin sayfalara iniyordu: bosa 2 istek, hem de
+            # oturumun EN HASSAS aninda. Parti ancak bir onceki turla
+            # karsilastirilarak anlasilir.
+            _parti_esigi = max(PARTI_ESIK, int(PARTI_ORAN * len(items))) if items else 0
+            if PARTI_DUYARLI and tur > 1 and items and yeni >= _parti_esigi:
                 print(f"[TUR {tur}] PARTI ALGILANDI ({yeni}/{len(items)} yeni) "
                       f"— derin sayfalar okunuyor")
                 derin_yeni, derin_sayfa = derin_sayfalari_oku(driver, tur)
