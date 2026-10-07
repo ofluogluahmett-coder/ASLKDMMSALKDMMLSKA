@@ -70,6 +70,8 @@ BLOK_DINLENME = [7200, 14400, 28800]   # 2 sa, 4 sa, 8 sa (ardisik bloga gore)
 # Alternatif kimlik BU KADAR sn icinde bloklanmissa tekrar denemeye degmez
 # (iki bloklu tarayici arasinda ping-pong olmasin). Disinda HER ZAMAN denenir.
 TAZE_BLOK_SN = float(os.getenv("TAZE_BLOK_SN", "600"))   # 10 dk
+# Ust uste blokta atlamayi kes ve bu kadar bekle (ping-pong freni).
+UZUN_BLOK_MOLA = float(os.getenv("UZUN_BLOK_MOLA", "1800"))   # 30 dk
 
 AKTIF_TARAYICI = TARAYICI
 TARAYICI_YOL = _TARAYICI_YOLLARI.get(TARAYICI, BRAVE_PATH)
@@ -443,6 +445,46 @@ BLOCK_URLS = [
     "*google-analytics*", "*googletagmanager*", "*doubleclick*",
     "*facebook.net*", "*hotjar*", "*criteo*",
 ]
+
+# ══════════════════════════════════════════════════════════════════════
+#  GUVENLI MOD (07.10.2026) — KANITLANMIS KONFIGURASYON + 50'LIK LISTE
+#
+#  Kullanici: "o geceye ek bir tek 50'li sayfa duzenini ekleyelim, ama
+#  nereye dondugunden emin ol." LOG'DAN DOGRULANDI (05.10 23:56 kosusu):
+#  31 tur boyunca 0 CHALLENGE / 0 PX / 0 HATA. Acilis satirlari aynen:
+#      Brave (anonim gecici profil)
+#      gorsel_blok = KAPALI      (gorseller INDIRILIYOR)
+#      cache_disabled = KAPALI
+#      cache_bust = KAPALI
+#      ISINMA = acik (29 cerez)
+#      tempo = 50-75 sn
+#      URL = /otomobil?sorting=date_desc   (DUZ: pagingSize/pagingOffset YOK)
+#      sayfa = 21-22 ilan,  mod = uc-launch
+#
+#  O kosunun log'unda HER TURDA "[sayfa tam dondu: ilan kaciriyor
+#  olabilirsin]" vardi — 22'lik sayfa gercekten sinirdaydi. Bu yuzden TEK
+#  EKLEME: sayfa boyu 50 (sitenin kendi dugmesine tiklanarak, insan yolundan).
+#
+#  TEK DEGISKENLI DENEY: derin sayfa (pagingOffset) YOK, tarayici havuzu
+#  YOK, tempo AYNI. Dun gecenin hatasi dort seyi birden degistirmekti
+#  (50'lik liste + derin sayfa + 180-240 sn + havuz); PX cigi geldi ve
+#  suclunun hangisi oldugu belirsiz kaldi. Simdi tek sey degisiyor.
+#
+#  GUVENLI_MOD=0 ile deneysel ozellikler geri acilir.
+# ══════════════════════════════════════════════════════════════════════
+GUVENLI_MOD = os.getenv("GUVENLI_MOD", "1") != "0"
+if GUVENLI_MOD:
+    PARTI_DUYARLI = False              # derin sayfa YOK (pagingOffset yok)
+    TEMEL_MIN, TEMEL_MAX = 50.0, 75.0  # temiz kosunun temposu
+    ADAPTIF = False                    # carpanli yavaslatma yok
+    HAVUZ_AKTIF = os.getenv("HAVUZ", "0") != "0"   # havuz varsayilan KAPALI
+    if not os.getenv("TARAYICI"):
+        TARAYICI = "brave"             # temiz kosu Brave ileydi
+        AKTIF_TARAYICI = TARAYICI
+        TARAYICI_YOL = _TARAYICI_YOLLARI["brave"]
+    # SAYFA_BOYU'na DOKUNULMUYOR: varsayilan 50 (kullanicinin tek eklemesi).
+    # KACIRMA takibi OLCUM OLARAK kalir: bosluk log'a yazilir ama derin
+    # sayfa OKUNMAZ — riskli istek eklemeden kayip olculur.
 
 # Oturumun AKTIF liste URL'si. Sayfa boyu buyutulurse (sitenin kendi
 # dugmesine tiklayarak) bu URL pagingSize icerir ve tum turlar bunu kullanir.
@@ -1459,6 +1501,19 @@ def pusuya_yat():
                     # ISTATISTIK icin duruyor.
                     _digerleri = [a for a in _kurulu_tarayicilar()
                                   if a != AKTIF_TARAYICI]
+                    # PING-PONG FRENI (07.10.2026) — 06.10 gecesi olcum:
+                    # bot ust uste 5 kez Brave<->Chrome atladi, her atlama
+                    # aninda blok yedi ve IKI KIMLIGI BIRDEN yakti; sonunda
+                    # "invalid session id" ile kosu oldu. Yani atlama ancak
+                    # ILK blokta ise yariyor. Ust uste blokta atlamayi kes,
+                    # uzun mola ver (gun boyu gozetimsiz kosu icin sart).
+                    if challenge_seri >= 2 and _digerleri:
+                        print(f"           HAVUZ: ust uste {challenge_seri} "
+                              f"blok — atlama DURDURULDU, "
+                              f"{UZUN_BLOK_MOLA / 60:.0f} dk mola "
+                              f"(ping-pong iki kimligi birden yakiyor)")
+                        time.sleep(UZUN_BLOK_MOLA)
+                        _digerleri = []
                     if _digerleri:
                         _yeni = _digerleri[0]
                         print(f"           HAVUZ: {AKTIF_TARAYICI.upper()} "
@@ -1517,7 +1572,17 @@ def pusuya_yat():
             _parti_esigi = max(PARTI_ESIK, int(PARTI_ORAN * len(items))) if items else 0
             _parti = (PARTI_DUYARLI and tur > 1 and items and _onceki_su
                       and taze >= _parti_esigi)
-            if _bosluk or _parti:
+            if _bosluk and not PARTI_DUYARLI:
+                # OLCUM MODU (guvenli mod): boslugu BILDIR ama riskli derin
+                # istek ATMA. 07.10 — bu dal olmadan guvenli modda bile
+                # bosluk gorulunce bosluk_kapat() cagrilip pagingOffset
+                # istekleri atiliyordu; "derin sayfa yok" sozuyle celisiyordu.
+                _kacirma_sayisi += 1
+                print(f"[TUR {tur}] !! BOSLUK OLCUMU ({_kacirma_sayisi}. kez): "
+                      f"sayfanin en eskisi ({_s_min}) su seviyesinden "
+                      f"({_onceki_su}) YENI — bu turda ilan kacirdik. "
+                      f"(guvenli mod: derin sayfa okunmuyor)")
+            elif _bosluk or _parti:
                 if _bosluk:
                     print(f"[TUR {tur}] !! BOSLUK: sayfanin en eskisi "
                           f"({_s_min}) su seviyesinden ({_onceki_su}) YENI — "
