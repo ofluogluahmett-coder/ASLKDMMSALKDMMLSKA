@@ -31,6 +31,12 @@ set MAX_TUR=0
 set GUVENLI_MOD=1
 set TARAYICI=brave
 set SAYFA_BOYU=50
+REM 07.10.2026 — SAYFA BOYU TIKLAMA ILE DEGIL URL ILE. Olcum: PX tam
+REM "50"ye TIKLADIGI ANDA geldi (iki ayri oturumda, ayni noktada;
+REM kullanici ikisini de elle gecmek zorunda kaldi). Arada pagingSize=50
+REM URL'iyle 15 tur sorunsuz dondu. Yani suclu parametre degil, GECIS
+REM HAREKETI. Dogrudan URL ile giris denendi: acilista PX GELMEDI.
+set SAYFA_BOYU_MOD=url
 set PARTI_DUYARLI=0
 set HAVUZ=1
 set TEMEL_MIN=50
@@ -41,7 +47,7 @@ echo   GUN BOYU TEST
 echo ============================================
 echo   tarayici    : Brave (PX'te Chrome'a atlar)
 echo   tempo       : 50-75 sn
-echo   sayfa boyu  : 50
+echo   sayfa boyu  : 50  (DOGRUDAN URL ile, tiklama YOK)
 echo   derin sayfa : YOK (bosluk sadece olculur)
 echo.
 echo   Log: px_gun.log   (canli izlemek icin baska pencerede:

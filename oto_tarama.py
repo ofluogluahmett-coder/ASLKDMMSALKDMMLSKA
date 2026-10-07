@@ -338,6 +338,12 @@ DAVRANIS    = os.getenv("DAVRANIS", "1") != "0"
 # ihtiyaci buyuk olcude biter, toplam istek sayisi duser, kayip biter.
 # 20 ise eski davranis (sayfa boyu degistirilmez).
 SAYFA_BOYU = int(os.getenv("SAYFA_BOYU", "50"))
+# 07.10.2026 — sayfa boyu NASIL ayarlanacak?
+#   "url"   : isinmadan sonra DOGRUDAN pagingSize'li URL'e gir (VARSAYILAN).
+#             Olcum: tiklama ani PX tetikliyor (iki ayri oturumda, ayni
+#             noktada), ama pagingSize'li URL ile 15 tur sorunsuz dondu.
+#   "tikla" : sitenin kendi dugmesine tiklayarak gec (eski davranis).
+SAYFA_BOYU_MOD = os.getenv("SAYFA_BOYU_MOD", "url").strip().lower()
 
 # ZENGIN=1: her sayfa, otobotun KANITLANMIS ayristiricisindan gecirilip
 # zengin semaya (oto_hafiza.db) da yazilir -> marka/seri/model/motor_hacim/
@@ -934,10 +940,29 @@ def surucu_olustur(sessiz=False):
     except Exception as e:
         print(f"[UYARI] debug portu okunamadi: {e}")
     isin(driver, sessiz)       # soguk giris yapma: once ana sayfa
-    # Sayfa boyunu insan yoluyla buyut (en alta kaydir + sitenin dugmesi)
     global AKTIF_URL
-    _u = sayfa_boyu_ayarla(driver, sessiz)
-    AKTIF_URL = _u or ANA_URL
+    # 07.10.2026 — SAYFA BOYU: TIKLAMA YERINE DOGRUDAN URL.
+    # OLCUM (kullanici iki kez bildirdi): PX tam "50"ye TIKLADIGI ANDA
+    # geliyor. Iki ayri oturumda, ayni noktada:
+    #   21:24 oturum acilisi -> sayfa boyu tiklamasi -> PX (elle gecildi)
+    #   21:46 PX sonrasi yeni oturum -> ayni tiklama -> PX (elle gecildi)
+    # Arada ise pagingSize=50 URL'iyle 15 TUR SORUNSUZ dondu.
+    # => Suclu parametre DEGIL, GECIS HAREKETI: isinma -> 22'lik kategori
+    #    sayfasi -> asagi kaydir -> dugmeye tikla -> yeni sayfa zinciri.
+    # Cozum: zinciri atla, isinmadan sonra DOGRUDAN 50'lik URL'e gir.
+    # Tek navigasyon, tiklama yok, gecis ani yok.
+    # SAYFA_BOYU_MOD=tikla ile eski (tiklamali) davranisa donulur.
+    if SAYFA_BOYU > 20 and SAYFA_BOYU_MOD == "url":
+        _ayirac = "&" if "?" in ANA_URL else "?"
+        AKTIF_URL = f"{ANA_URL}{_ayirac}pagingSize={SAYFA_BOYU}"
+        if not sessiz:
+            print(f"SAYFA BOYU: {SAYFA_BOYU} — DOGRUDAN URL ile "
+                  f"(tiklama YOK; tiklama anı PX tetikliyordu)")
+    elif SAYFA_BOYU > 20:
+        _u = sayfa_boyu_ayarla(driver, sessiz)
+        AKTIF_URL = _u or ANA_URL
+    else:
+        AKTIF_URL = ANA_URL
     return driver
 
 
