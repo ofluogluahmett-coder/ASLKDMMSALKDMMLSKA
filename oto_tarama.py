@@ -259,7 +259,12 @@ BOS_TUR_TAVAN  = 3          # carpan en fazla 1.15^3 (~1.52)
 # Challenge gorunce YAPILMAYACAK sey: ayni oturumla tekrar denemek. Damgali
 # oturum her istekte damgayi tazeler. Yapilacak: oturumu TERK et, katlanarak
 # bekle, temiz profille don ve bir sure TEMKINLI git.
-CHALLENGE_MOLA = [300, 900, 1800, 3600]     # 1., 2., 3., 4.+ ust uste challenge
+# 07.10.2026 — KULLANICI: "sureyi 5 dk'dan 2'ye ceksek, olmadi arttiririz."
+# Mantikli: kisa mola daha az olu zaman, tutmazsa zaten katlanarak uzuyor.
+# Env'den ayarlanabilir: CHALLENGE_MOLA="120,600,1800,3600"
+CHALLENGE_MOLA = [int(x) for x in
+                  os.getenv("CHALLENGE_MOLA", "120,600,1800,3600").split(",")
+                  if x.strip()]     # 1., 2., 3., 4.+ ust uste challenge
 TEMKINLI_TUR    = int(os.getenv("TEMKINLI_TUR", "12"))
 TEMKINLI_CARPAN = 2.0
 
@@ -268,6 +273,14 @@ TEMKINLI_CARPAN = 2.0
 # kullanilan kalici profil surekli CF yiyordu). Anonim modda tazeleme bedava:
 # driver'i kapat, kisa bekle, yeni gecici profille ac. 0 = kapali.
 OTURUM_TAZELE_DK = float(os.getenv("OTURUM_TAZELE_DK", "90"))
+# 07.10.2026 — TUR BAZLI PROAKTIF EMEKLILIK.
+# Gerekce: kullanicinin gercek oturumlari 5-20 dakika suruyor; bizimki
+# saatlerce TEK kimlikte kaliyor ve PX skoru oturum omru boyunca birikiyor.
+# Blok YEMEYI BEKLEMEK yerine, kimligi daha erken ve KENDI istegimizle
+# birakmak. Olcum: blok genellikle 15-25 tur arasinda geliyor; 10-12 turda
+# emekli etmek o esigin ALTINDA kalmak demek.
+# 0 = kapali (sadece sure bazli tazeleme calisir).
+OTURUM_TUR = int(os.getenv("OTURUM_TUR", "0"))
 
 # --- 5) ES ZAMANLILIK ----------------------------------------------------
 # Ayni IP'den es zamanli IKI oturum, tek oturumdan daha anormal bir desendir.
@@ -426,6 +439,17 @@ PARTI_SAYFA_ARASI = (
 # kartlar cikarilir; BELGE navigasyonu YOK.
 # YENILEME=get -> eski davranis (her tur driver.get).
 YENILEME = os.getenv("YENILEME", "get").strip().lower()
+
+# --- 10) GEZINME CESITLILIGI (07.10.2026) -------------------------------
+# Olcum (arac_izle.py): kullanicinin 7 dakikasi 11 belge istegi + 144 XHR
+# idi — ana sayfa, kategori, ilan detayi, geri, baska ilan. Botun bir saati
+# ise 60 belge istegi ve HEPSI AYNI URL'e, araya hicbir sey girmeden.
+# Fark fingerprint DEGIL, ISTEK GRAFIGI: insanin oturumu bir gezinme agaci,
+# bizimki tek dugumun tekrari. Hicbir insan ayni adresi dakikada bir,
+# saatlerce, referer'siz istemez.
+# GEZINME=1: her 4-8 turda bir rastgele bir ilan detayina girilir, insan
+# gibi birkac saniye okunur/scroll edilir, sonra GERI donulur.
+GEZINME = os.getenv("GEZINME", "1") != "0"
 ISINMA_URL  = "https://www.sahibinden.com/"
 CACHE_BUST  = os.getenv("CACHE_BUST", "0") != "0"   # 06.10: VARSAYILAN KAPALI (bkz. yukarisi)
 CDP_PORT    = os.getenv("CDP_PORT", "").strip()
@@ -1129,17 +1153,34 @@ def hedef_periyot(bos_tur, temkinli_kalan):
     return min(p, PERIYOT_TAVANI)
 
 
-# Sayfanin KENDI baglaminda fetch(): sitenin sayfalama istegiyle ayni
-# bicim. Donen HTML'den kartlari JS tarafinda cikarip JSON veriyoruz —
-# boylece DOM'u degistirmeye (ve sayfayi bozmaya) gerek kalmiyor.
+# Sayfanin KENDI baglaminda liste istegi. Donen HTML'den kartlari JS
+# tarafinda cikarip JSON veriyoruz — DOM'u degistirmeye gerek kalmiyor.
+#
+# 07.10.2026 — HAM fetch YERINE SAYFANIN NORMAL XMLHttpRequest YOLU.
+# Olcum: ham fetch ile ilk denemede "XHR tutmadi (challenge)" dondu, yani
+# istek bloklandi — oysa kullanicinin KENDI oturumu AYNI adrese 13 kez XHR
+# atti ve hic bloklanmadi (arac_izle.py kaydi). Muhtemel sebep: sayfadaki
+# PX SDK'si XMLHttpRequest'i SARIYOR ve kendi dogrulamasini ekliyor; ham
+# fetch o sarmalayiciyi ATLIYOR.
+# NOT: hicbir dogrulama basligini ELLE URETMIYORUZ. Sadece sayfanin NORMAL
+# XHR yolundan geciyoruz; istek gercek tarayicida, gercek sayfadan cikiyor
+# ve sitenin kendi SDK'si kendi isini yapiyor (kullanici tikladiginda
+# oldugu gibi). Basligi taklit etmek koruma mekanizmasini forge etmek olur,
+# yapilmiyor.
 XHR_JS = r"""
 const url = arguments[0];
 const bitti = arguments[arguments.length - 1];
-fetch(url, {
-  method: "GET",
-  credentials: "include",
-  headers: {"X-Requested-With": "XMLHttpRequest"}
-}).then(r => r.text().then(t => ({durum: r.status, metin: t})))
+new Promise((cz) => {
+  const x = new XMLHttpRequest();
+  x.open("GET", url, true);
+  x.withCredentials = true;
+  x.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+  x.onload = () => cz({durum: x.status, metin: x.responseText || ""});
+  x.onerror = () => cz({durum: 0, metin: ""});
+  x.ontimeout = () => cz({durum: 0, metin: ""});
+  x.timeout = 20000;
+  x.send();
+})
   .then(({durum, metin}) => {
     const kap = document.createElement("div");
     kap.innerHTML = metin;
@@ -1159,7 +1200,7 @@ fetch(url, {
         href: a ? a.href : ""
       });
     });
-    bitti({durum: durum, uzunluk: metin.length, kartlar: cikti,
+    bitti({durum: durum, uzunluk: metin.length, kartlar: cikti, ham: metin,
            challenge: /denied|px-captcha|basili tut|bas\u0131l\u0131 tut/i.test(metin.slice(0, 4000))});
   })
   .catch(e => bitti({hata: String(e)}));
@@ -1176,16 +1217,25 @@ def xhr_liste_cek(driver, url, timeout=25):
         return None
 
 
-def xhr_kartlari_isle(kartlar):
-    """xhr_liste_cek ciktisini DB'ye yaz. Doner: (yeni, guncel, en_yeni_id)"""
-    yeni = guncel = 0
+def xhr_kartlari_isle(kartlar, su_seviyesi=None):
+    """xhr_liste_cek ciktisini DB'ye yaz.
+
+    Doner: (yeni, guncel, en_yeni_id, taze, en_kucuk_id)
+    su_seviyesi verilirse ID'si bunun USTUNDE olanlar 'taze' sayilir;
+    en_kucuk_id kacirma (bosluk) tespiti icin gerekir."""
+    yeni = guncel = taze = 0
     en_yeni_id = 0
+    en_kucuk_id = 0
     for k in kartlar or []:
         try:
             ilan_id = (k.get("id") or "").strip()
             if not ilan_id or not ilan_id.isdigit():
                 continue
-            en_yeni_id = max(en_yeni_id, int(ilan_id))
+            _idn = int(ilan_id)
+            en_yeni_id = max(en_yeni_id, _idn)
+            en_kucuk_id = _idn if not en_kucuk_id else min(en_kucuk_id, _idn)
+            if su_seviyesi is not None and _idn > su_seviyesi:
+                taze += 1
             if ilan_id in gorulmus:
                 continue
             baslik = (k.get("baslik") or "").strip()
@@ -1204,7 +1254,47 @@ def xhr_kartlari_isle(kartlar):
             gorulmus.add(ilan_id)
         except Exception:
             continue
-    return yeni, guncel, en_yeni_id
+    return yeni, guncel, en_yeni_id, taze, en_kucuk_id
+
+
+def ilan_detayina_bak(driver, url, tur=0):
+    """GEZINME CESITLILIGI (07.10.2026) — arada bir ilan detayina gir.
+
+    NEDEN: olcum, asil yapisal farki gosterdi. Kullanicinin 7 dakikasi
+    11 belge istegi + 144 XHR idi (ana sayfa -> kategori -> ilan detayi ->
+    geri -> baska ilan). Botun bir saati ise 60 belge istegi ve HEPSI AYNI
+    URL'e, baska hicbir sey yok. Fark fingerprint degil ISTEK GRAFIGI:
+    insanin oturumu bir gezinme agaci, bizimki tek dugumun tekrari.
+    Hicbir insan ayni adresi dakikada bir, saatlerce, referer'siz,
+    araya hicbir sey koymadan istemez.
+
+    Bu fonksiyon grafigi agac haline getirir: ilana girer, insan gibi
+    birkac saniye okur, scroll eder, sonra GERI doner. Ayrica PX sensorune
+    gercek sayfa goruntulemesi ve referer'li navigasyon verir.
+    Hata halinde sessizce doner; tarama akisini bozmaz."""
+    if not url:
+        return False
+    try:
+        driver.get(url)
+        _istek_say()
+        time.sleep(random.uniform(2.0, 5.0))        # sayfa oturdu
+        for _ in range(random.randint(1, 3)):       # ilani "oku"
+            driver.execute_script("window.scrollBy(0, %d);"
+                                  % random.randint(250, 700))
+            time.sleep(random.uniform(0.8, 2.2))
+        time.sleep(random.uniform(1.5, 4.0))
+        print(f"[TUR {tur}]   gezinme: bir ilana bakildi, geri donuluyor")
+        driver.back()
+        time.sleep(random.uniform(1.5, 3.0))
+        return True
+    except Exception as e:
+        print(f"[TUR {tur}]   gezinme hatasi (atlandi): {str(e)[:80]}")
+        return False
+
+
+def _istek_say():
+    global _istek
+    _istek += 1
 
 
 def sayfa_isle(items, su_seviyesi=None):
@@ -1420,6 +1510,9 @@ def pusuya_yat():
     bos_tur = 0            # ust uste yeni ilan gelmeyen tur sayisi
     challenge_seri = 0     # ust uste challenge sayisi
     temkinli_kalan = 0     # kac tur daha temkinli gidilecek
+    _sayfa_acik = False    # oturumda liste sayfasi bir kez yuklendi mi?
+    _oturum_turu = 0       # BU oturumda kac tur atildi (proaktif emeklilik)
+    _gez_sayac = random.randint(4, 8)   # kac tur sonra bir ilana bakilacak
     while True:
         if MAX_TUR and tur >= MAX_TUR:
             with db_baglan() as con:
@@ -1429,17 +1522,25 @@ def pusuya_yat():
             surucu_kapat(driver)
             return
         tur += 1
+        _oturum_turu += 1
         tur_basla = time.monotonic()
 
         # OTURUM TAZELEME: uzun yasayan oturum PX cerezi biriktirir.
-        if OTURUM_TAZELE_DK and (time.monotonic() - oturum_basla) > OTURUM_TAZELE_DK * 60:
-            print(f"[TUR {tur}] oturum {OTURUM_TAZELE_DK:.0f}dk doldu — "
-                  f"temiz profille yeniden aciliyor")
+        _tur_doldu = bool(OTURUM_TUR and _oturum_turu >= OTURUM_TUR)
+        _sure_doldu = bool(OTURUM_TAZELE_DK and
+                           (time.monotonic() - oturum_basla) > OTURUM_TAZELE_DK * 60)
+        if _tur_doldu or _sure_doldu:
+            _sebep = (f"{_oturum_turu} tur" if _tur_doldu
+                      else f"{OTURUM_TAZELE_DK:.0f}dk")
+            print(f"[TUR {tur}] oturum {_sebep} doldu — PROAKTIF EMEKLILIK, "
+                  f"temiz profille yeniden aciliyor (blok beklemiyoruz)")
+            _oturum_turu = 0
             surucu_kapat(driver)
             time.sleep(random.uniform(20, 40))
             driver = surucu_olustur(sessiz=True)
             oturum_basla = time.monotonic()
             gorulmus.clear()
+            _sayfa_acik = False      # yeni oturum: ilk tur TAM SAYFA olmali
 
         try:
             # Cache-buster: her tur farkli URL -> origin taze cevaba zorlanir.
@@ -1447,10 +1548,44 @@ def pusuya_yat():
             t0 = time.time()
             _url = (f"{AKTIF_URL}&_={int(time.time() * 1000)}" if CACHE_BUST
                     else AKTIF_URL)
-            driver.get(_url)
-            _istek += 1
-            _sayfa_bekle(driver, timeout=20)
-            items = driver.find_elements(By.CSS_SELECTOR, ".searchResultsItem")
+            # ══════════════════════════════════════════════════════════
+            #  YENILEME=xhr — SAYFAYI YENIDEN YUKLEMEYI BIRAK
+            #  Olcum (arac_izle.py, kullanicinin KENDI oturumu, 7 dk):
+            #    Document: 11  |  XHR: 144  (13'u DOGRUDAN liste URL'si)
+            #  Yani insan listeyi tazelerken TAM SAYFA yuklemiyor, sitenin
+            #  kendi XHR'ini atiyor. Bizim bot ise her turda ayni URL'e
+            #  BELGE navigasyonu yapiyordu: saatte 60 belge istegi, hepsi
+            #  ayni adrese, referer'siz. Insan trafiginde bu desen YOK.
+            #  Artik oturumda BIR tam sayfa, sonrasi sayfanin kendi
+            #  baglamindan fetch (ayni cerez, ayni referer,
+            #  X-Requested-With: XMLHttpRequest).
+            #  XHR basarisiz olursa veya challenge isareti varsa tam
+            #  sayfaya DUSULUR (guvenli geri cekilme).
+            # ══════════════════════════════════════════════════════════
+            _xhr_kartlar = None
+            _ham_html = None
+            if YENILEME == "xhr" and _sayfa_acik:
+                _s = xhr_liste_cek(driver, _url)
+                if (_s and not _s.get("hata") and _s.get("durum") == 200
+                        and not _s.get("challenge") and _s.get("kartlar")):
+                    _xhr_kartlar = _s.get("kartlar")
+                    _ham_html = _s.get("ham")
+                else:
+                    _sebep = ("challenge" if (_s or {}).get("challenge")
+                              else (_s or {}).get("hata")
+                              or "durum=%s" % (_s or {}).get("durum"))
+                    print(f"[TUR {tur}] XHR tutmadi ({_sebep}) — tam sayfaya "
+                          f"dusuluyor")
+            if _xhr_kartlar is None:
+                driver.get(_url)
+                _istek += 1
+                _sayfa_acik = True
+                _sayfa_bekle(driver, timeout=20)
+                items = driver.find_elements(By.CSS_SELECTOR,
+                                             ".searchResultsItem")
+            else:
+                _istek += 1          # XHR de bir istektir
+                items = _xhr_kartlar  # sadece len() ve bosluk icin kullanilir
             # 06.10.2026 — IKINCI SANS. Soguk oturumda sayfa 12 sn'de
             # yetismiyordu; basligi "sahibinden.com Yukleniyor" iken 0 ilan
             # okuyup turu bosa harciyorduk (olcum: yukle=12.37s, ilan=0).
@@ -1555,6 +1690,7 @@ def pusuya_yat():
                 driver = surucu_olustur(sessiz=True)
                 oturum_basla = time.monotonic()
                 gorulmus.clear()
+                _sayfa_acik = False  # yeni oturum: ilk tur TAM SAYFA olmali
                 temkinli_kalan = TEMKINLI_TUR
                 continue
             if len(items) == 0:
@@ -1567,18 +1703,48 @@ def pusuya_yat():
 
             global _SU_SEVIYESI
             _onceki_su = _SU_SEVIYESI
-            yeni, guncel, en_yeni_id, taze = sayfa_isle(items, _onceki_su)
+            # XHR modunda kartlar sozluk listesi, DOM modunda Selenium ogesi
+            if _xhr_kartlar is not None:
+                (yeni, guncel, en_yeni_id, taze,
+                 _xhr_min) = xhr_kartlari_isle(_xhr_kartlar, _onceki_su)
+            else:
+                yeni, guncel, en_yeni_id, taze = sayfa_isle(items, _onceki_su)
+                _xhr_min = None
             if en_yeni_id > _SU_SEVIYESI:
                 _SU_SEVIYESI = en_yeni_id
 
-            # ZENGIN SEMA: ayni sayfayi otobotun ayristiricisindan gecir
+            # ZENGIN SEMA: ayni sayfayi otobotun ayristiricisindan gecir.
+            # XHR modunda fetch'in dondurdugu HAM HTML kullanilir (sayfa
+            # degismedigi icin driver.page_source eski icerigi verirdi).
             z_ek = z_gun = 0
             if ZENGIN:
                 try:
                     import oto_kopru
-                    z_ek, z_gun = oto_kopru.html_isle(driver.page_source)
+                    z_ek, z_gun = oto_kopru.html_isle(
+                        _ham_html if _ham_html else driver.page_source)
                 except Exception as e:
                     print(f"[TUR {tur}] [KOPRU] atlandi: {str(e)[:90]}")
+
+            # GEZINME CESITLILIGI: arada bir ilan detayina gir, geri don.
+            # Istek grafigini "tek dugumun tekrari"ndan AGACA cevirir.
+            _gez_sayac -= 1
+            if GEZINME and _gez_sayac <= 0 and items:
+                _gez_sayac = random.randint(4, 8)
+                try:
+                    if _xhr_kartlar is not None:
+                        _adaylar = [k.get("href") for k in _xhr_kartlar
+                                    if k.get("href")]
+                    else:
+                        _adaylar = [a.get_attribute("href") for a in
+                                    driver.find_elements(
+                                        By.CSS_SELECTOR,
+                                        ".searchResultsTitleValue a")[:20]]
+                    _adaylar = [u for u in _adaylar if u and "/ilan/" in u]
+                    if _adaylar and ilan_detayina_bak(
+                            driver, random.choice(_adaylar), tur):
+                        _sayfa_acik = True   # geri donusle liste yuklendi
+                except Exception as e:
+                    print(f"[TUR {tur}]   gezinme atlandi: {str(e)[:70]}")
 
             # PARTI DUSTU MU? Sayfanin buyuk kismi yeniyse parti gelmis
             # demektir ve tasan kisim derin sayfalarda kaliyor.
@@ -1591,7 +1757,10 @@ def pusuya_yat():
             # KACIRMA TESPITI: sayfanin EN KUCUK ID'si su seviyesinden
             # buyukse arada gormedigimiz ilanlar var (kesin tespit).
             global _hiz_carpani, _kacirma_sayisi
-            _s_min, _s_max = _sayfa_id_araligi(items)
+            if _xhr_min is not None:
+                _s_min, _s_max = _xhr_min, en_yeni_id
+            else:
+                _s_min, _s_max = _sayfa_id_araligi(items)
             _bosluk = bool(KACIRMA_TAKIP and items and _onceki_su
                            and _s_min > _onceki_su)
             _parti_esigi = max(PARTI_ESIK, int(PARTI_ORAN * len(items))) if items else 0

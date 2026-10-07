@@ -42,6 +42,21 @@ set HAVUZ=1
 set TEMEL_MIN=50
 set TEMEL_MAX=75
 
+REM 07.10.2026 — YAPISAL DEGISIKLIKLER (gece kodlandi, temiz IP'de
+REM olculecek). Gerekce: olcum, asil farkin ISTEK GRAFIGI oldugunu
+REM gosterdi. Kullanicinin 7 dakikasi 11 belge + 144 XHR idi (ana sayfa,
+REM kategori, ilan detayi, geri); botun bir saati 60 belge istegi ve
+REM HEPSI AYNI URL'e. Hicbir insan ayni adresi dakikada bir, saatlerce,
+REM referer'siz istemez.
+REM   YENILEME=xhr : oturumda 1 tam sayfa, sonrasi sayfanin KENDI
+REM                  XMLHttpRequest yolu (ayni cerez/referer). Tutmazsa
+REM                  otomatik tam sayfaya duser.
+REM   GEZINME=1    : her 4-8 turda bir rastgele ilana girip geri doner.
+set YENILEME=xhr
+set GEZINME=1
+REM Challenge molasi: 2/10/30/60 dk (ilk mola 5'ten 2'ye cekildi)
+set CHALLENGE_MOLA=120,600,1800,3600
+
 echo ============================================
 echo   GUN BOYU TEST
 echo ============================================
