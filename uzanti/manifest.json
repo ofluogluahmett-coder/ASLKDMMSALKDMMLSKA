@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Oto Kelepir Toplayici",
-  "version": "1.1",
-  "description": "sahibinden liste sayfalarini (otomobil + PC bileseni) sayfanin kendi baglamindan izler; yeni ilanlari yerel sunucuya yazar. WebDriver/CDP kullanmaz.",
+  "version": "1.2",
+  "description": "sahibinden OTOMOBIL listesini sayfanin kendi baglamindan izler; yeni ilanlari yerel sunucuya yazar. WebDriver/CDP kullanmaz. PC bileseni/konsol BU UZANTIDA DEGIL - onlar apex_predator'un kendi botuyla (baslat.bat) toplanir.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://www.sahibinden.com/*",
@@ -13,11 +13,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.sahibinden.com/otomobil*",
-        "https://www.sahibinden.com/masaustu-donanim*",
-        "https://www.sahibinden.com/oyun-konsolu*"
-      ],
+      "matches": ["https://www.sahibinden.com/otomobil*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

@@ -41,11 +41,14 @@
   const SUNUCU = "http://127.0.0.1:8765/ilan";
   const AYAR_UC = "http://127.0.0.1:8765/ayar";
 
-  // Hangi kategorideyiz? Sunucu yonlendirmeyi buna gore yapiyor.
-  const KATEGORI =
-    location.pathname.indexOf("masaustu-donanim") >= 0 ? "pc" :
-    location.pathname.indexOf("oyun-konsolu") >= 0 ? "konsol" :
-    "otomobil";
+  // 08.10.2026 (aksam) — KULLANICI KARARI: PC bileseni ve konsol BU
+  // UZANTIDA TOPLANMIYOR. Onlar apex_predator'un kendi botuyla
+  // (baslat.bat) eskiden oldugu gibi toplanacak. Bir ara uzantiya
+  // eklenmisti; kaldirildi. Sebep: tek oturuma uc kategori yiginca
+  // sahibinden 2FA duvari cikardi (bkz. CLAUDE.md 08.10 aksam notu) ve
+  // kullanici PC tarafinin kanitlanmis akisini bozmak istemiyor.
+  // Sunucu hala "kategori" alanini bekliyor; sabit otomobil gonderilir.
+  const KATEGORI = "otomobil";
 
   // ── CANLI AYAR (08.10.2026) ────────────────────────────────────────
   // Her turda yerel sunucudan okunur. Sebep: bir gun icinde tempo,

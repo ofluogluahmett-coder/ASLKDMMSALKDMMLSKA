@@ -1,8 +1,8 @@
 {
   "_aciklama": "Uzantinin CANLI ayarlari. content.js her turda /ayar'dan okur, yani burayi degistirmek icin uzantiyi yeniden yuklemek GEREKMEZ. Bir gun icinde alti kez 'uzantiyi yenile' demek zorunda kaldiktan sonra eklendi (08.10.2026).",
-  "bekci_yenileme": false,
+  "bekci_yenileme": true,
   "_bekci_yenileme": "false yapilirsa bekci sekmeyi ASLA yenilemez. 08.10.2026'da bekcinin hatali bir yenilemesi PX blogu uretti; bu anahtar gerektiginde kullaniciya hic dokundurmadan susturmak icin var. Bekci ayrica artik sadece SUNUCU sessizlik dogrularsa ve saatte en fazla bir kez yeniliyor.",
-  "durdur": true,
+  "durdur": false,
   "_durdur": "true yapilirsa toplayici tur atmayi birakir (tarayiciya dokunmadan durdurma).",
   "aralik_min_sn": 50,
   "aralik_max_sn": 80,
@@ -14,14 +14,10 @@
     0
   ],
   "_ofsetler": "Izlenecek sayfa ofsetleri, donusumlu. [0] = sadece birinci sayfa. [0,50] = birinci + ikinci sayfa (100 ilanlik pencere). Sitenin kendi sayfalama linki: /otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc. OLCUM: 50 slotluk birinci sayfa ~1 dakikada tamamen devriliyor, bu yuzden derinlik kaybi onlemek icin onemli.",
-  "pc_tg_tavan": 5,
-  "_pc_tg_tavan": "PC bileseni scraper kanalina bir turda en fazla kac yeni ilan dusecek.",
   "tg_foto": false,
   "_tg_foto": "false = ilanlar FOTOSUZ (metin) gider. 16:09 KARARI: iki alici eklenince her mesaj IKI sendPhoto cagrisi oldu, kapasite dakikada ~5.5 -> ~2.75 dustu; uretim ~3.1 olunca kuyruk 5->8 diye buyumeye basladi. Foto kapatilinca metin gonderimi kat kat hizli, bu yuzden tavan da 2 -> 4 yukseltildi: kanala DAHA COK ilan, hepsi TAZE. Gerekce: ilanin linki mesajda duruyor, fotoya bir dokunusla bakilabiliyor; ama BAYAT ilanin telafisi yok.",
   "tg_tur_tavan": 3,
   "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu â€” sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim | 15:30 GUNCELLEME: tavan 3 iken kuyruk 7 mesajda takildi (uretim ~4/dk, kapasite ~5.5/dk, ozet satiri da sayiliyor). 2 yapildi: uretim ~3/dk, pay acildi.",
   "sayfa_boyu": 50,
-  "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50.",
-  "_durdur_sebep": "18:08 — temiz profilin oturumu PX yedi (Access to this page has been denied). SEBEP: sekme kapanmisti, ben kategori adresini DOGRUDAN actim = SOGUK GIRIS. Projenin 05.10 bulgusu zaten bunu soyluyordu: soguk giris PX in kok nedeni, cozum isinma (ana sayfa -> bekle -> kategori). Kendi notumu uygulamadim. Toplayici durduruldu; bloklu oturuma istek atmak blogu derinlestirir.",
-  "_bekci_kapali_sebep": "18:11 — oturum PX bloklu. Bekci 648 sn sessizlikten sonra sayfayi yeniledi; bloklu sayfada yenileme ISE YARAMAZ ve blogu derinlestirir. Blok gecene kadar kapali. Not: bekcinin mantigi dogru calisti (sunucu onayli sessizlik + 10 dk esik + saatte bir), eksik olan sey BLOK DURUMUNU bilmesiydi."
+  "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50."
 }

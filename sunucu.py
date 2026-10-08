@@ -48,14 +48,21 @@ PORT = 8765
 _sayac = {"istek": 0, "ilan": 0, "yeni": 0, "guncel": 0,
           "zengin_yeni": 0, "zengin_guncel": 0,
           "baslangic": datetime.now().isoformat(timespec="seconds"),
-          # 08.10.2026: acilista "az once gorulduk" varsayilir. Sebep:
-          # sunucu yeniden baslatildiginda son_gorulme bosaliyordu,
-          # bekci sunucudan cevap alamayip kendi bayat kaydina dusuyor
-          # ve SESSIZLIK sanip sekmeyi bosuna yeniliyordu (olcum:
-          # "sekme yenilendi (282 sn sessizdi)" — oysa yeni baslamistik).
-          # Acilista elimizde sessizlik KANITI yok; gercek sessizlik
-          # zaten esik kadar sonra yine yakalanir.
-          "son_gorulme": datetime.now().isoformat(timespec="seconds")}
+          }
+# NOT (08.10.2026, iki kez duzeltildi):
+#   1. hal — son_gorulme bos baslatiliyordu: bekci sunucudan olcum
+#      alamayip KENDI bayat kaydina dusuyor ve sekmeyi bosuna
+#      yeniliyordu ("sekme yenilendi (282 sn sessizdi)" oysa yeni
+#      baslamistik). Bir PX blogu bile uretti.
+#   2. hal — acilista "simdi" yazdim: bu sefer GERCEK sessizligi
+#      maskeledi. Sunucu yeniden baslatilinca bekci 0 sn sessizlik
+#      goruyor ve OLU toplayiciyi hic fark etmiyor (20:51'de tam bu
+#      oldu: sekme vardi, tur gelmiyordu, kimse anlamadi).
+#   DOGRUSU — /durum'da: son_gorulme varsa onu ver; HIC veri gelmediyse
+#   sunucunun ACILIS zamanini ver. Boylece sessizlik "sunucu
+#   acildigindan beri" olarak olculur: yeniden baslatmanin hemen
+#   ardindan kucuk (yanlis alarm yok), veri hic gelmezse buyuyor
+#   (gercek ariza yakalanir).
 
 # Panel icin tur gecmisi (bellekte, son 25 tur)
 _gecmis = deque(maxlen=25)
@@ -89,28 +96,6 @@ try:
 except Exception as _e:
     oto_tg = None
     print(f"  [tg] modul yuklenemedi: {str(_e)[:100]}")
-
-# ── PC BILESENI KOPRUSU (08.10.2026) ─────────────────────────────────
-# Ayni uzanti artik PC bileseni listesini de izliyor. O kategorinin
-# verisi apex_predator'un KANITLANMIS motoruna gider (kelepir_hafiza.db)
-# ve kelepir_avci.py zaten o DB'yi izledigi icin FIRSAT/VURGUN
-# bildirimleri KENDILIGINDEN calisir. Boylece PC botunun WebDriver'i ve
-# onunla gelen CF/PX derdi ortadan kalkar.
-_pc_kopru = None
-
-
-def pc_kopru():
-    global _pc_kopru
-    if _pc_kopru is not None:
-        return _pc_kopru
-    try:
-        import pc_kopru
-        _pc_kopru = pc_kopru
-        print("  [pc] PC bileseni koprusu AKTIF (apex KelepirMotor)")
-    except Exception as e:
-        _pc_kopru = False
-        print(f"  [pc] kopru yuklenemedi: {str(e)[:120]}")
-    return _pc_kopru
 
 # ID SU SEVIYESI — doping ayrimi. sahibinden'de eski ilanlar tarihi
 # tazelenip basa donuyor ve gorsel bir isaret YOK; ama ilan ID'leri
@@ -428,31 +413,9 @@ def panel_html():
          _kutu("Hafiza ilan", hafiza_ilan),
          _kutu("Skorlanabilir", hafiza_skor),
          '</div>']
-    # ── PC BILESENI (varsa) ──
-    if _sayac.get("pc_istek"):
-        pcd = {}
-        if _pc_kopru:
-            try:
-                pcd = _pc_kopru.durum()
-            except Exception:
-                pcd = {}
-        yas = ""
-        if _sayac.get("pc_son_gorulme"):
-            try:
-                s = int((datetime.now() - datetime.fromisoformat(
-                    _sayac["pc_son_gorulme"])).total_seconds())
-                yas = f" &middot; son tur {s} sn once"
-            except Exception:
-                pass
-        p.append('<h2>PC bileseni (apex motoru)</h2><div class="kutular">' +
-                 _kutu("PC turu", _sayac.get("pc_istek", 0)) +
-                 _kutu("DB'ye yazilan", _sayac.get("pc_yazilan", 0)) +
-                 _kutu("kelepir_hafiza", pcd.get("db_toplam", "?")) +
-                 _kutu("Bugun", pcd.get("db_bugun", "?")) +
-                 _kutu("Kanala giden", pcd.get("tg_gonderildi", 0)) +
-                 '</div><div class="alt">FIRSAT/VURGUN bildirimleri '
-                 'kelepir_avci.py uzerinden gider (DB izleyicisi)' +
-                 yas + '</div>')
+    # PC bileseni paneli KALDIRILDI (08.10.2026 aksam): o kategori
+    # apex_predator'un kendi botuyla toplaniyor, bu panel yalnizca
+    # otomobili gosteriyor.
     if _sayac.get("kayip") or _sayac.get("bozuk"):
         p.append('<div class="nabiz sessiz">DIKKAT: ' +
                  str(_sayac.get("kayip", 0)) + ' gonderim sayfa tarafinda '
@@ -558,11 +521,11 @@ class Isleyici(BaseHTTPRequestHandler):
                     timespec="seconds")
             if oto_tg is not None:
                 ek["telegram"] = oto_tg.durum()
-            if _pc_kopru:                      # sadece yuklendiyse
-                try:
-                    ek["pc"] = _pc_kopru.durum()
-                except Exception:
-                    pass
+            # Bekci icin: hic veri gelmediyse sessizlik sunucunun ACILIS
+            # zamanindan sayilir (bkz. _sayac yanindaki not).
+            if not _sayac.get("son_gorulme"):
+                ek["son_gorulme"] = _sayac["baslangic"]
+                ek["veri_hic_gelmedi"] = True
             ek["su_seviyesi"] = _su_seviyesi
             ek["bekci"] = _bekci or None
             self._cevap(200, json.dumps(
@@ -648,47 +611,19 @@ class Isleyici(BaseHTTPRequestHandler):
         kat = (veri.get("kategori") or ozet.get("kategori")
                or ("pc" if "masaustu-donanim" in str(ozet.get("url", ""))
                    else "otomobil"))
-        # Kategoriden BAGIMSIZ durumlar once ele alinir (ara sayfa /
-        # challenge her iki kategoride de olabilir; PC dali bunlari
-        # yutmasin).
-        if ozet.get("ara_sayfa") or ozet.get("challenge"):
-            pass          # asagidaki ozel bloklar isler
-        elif kat in ("pc", "konsol"):
-            ham_pc = veri.get("html") or ""
-            k = pc_kopru()
-            if not k:
-                self._cevap(200, "pc koprusu kapali")
-                return
-            try:
-                with _kopru_kilit:
-                    if kat == "konsol":
-                        # Konsolun KENDI filtreleri var (fiyat bandi
-                        # 8-120 bin + KONSOL_AKTIF beyaz listesi), bu
-                        # yuzden ayri yol. Scraper kanalina akmaz —
-                        # apex botunda da akmiyordu, sadece veri toplar.
-                        yazilan, yeni_s, toplam = k.konsol_isle(ham_pc)
-                    else:
-                        tavan = 5
-                        try:
-                            _a = json.loads((ROOT / "ayar.json")
-                                            .read_text(encoding="utf-8"))
-                            tavan = int(_a.get("pc_tg_tavan") or 5)
-                        except Exception:
-                            pass
-                        yazilan, yeni_s, toplam = k.html_isle(ham_pc, tavan)
-            except Exception as e:
-                print(f"  [{kat} hatasi] {str(e)[:120]}")
-                self._cevap(500, f"{kat} isleme hatasi")
-                return
-            _sayac[f"{kat}_istek"] = _sayac.get(f"{kat}_istek", 0) + 1
-            _sayac[f"{kat}_yazilan"] = (
-                _sayac.get(f"{kat}_yazilan", 0) + yazilan)
-            _sayac[f"{kat}_son_gorulme"] = datetime.now().isoformat(
-                timespec="seconds")
-            print(f"{datetime.now():%H:%M:%S}  [{kat.upper():6}] tur="
-                  f"{ozet.get('tur', '?'):>4}  sayfada={toplam:3}  "
-                  f"yeni={yeni_s:3}  DB'ye yazilan={yazilan:3}")
-            self._cevap(200, f"{kat} yeni={yeni_s} yazilan={yazilan}")
+        # 08.10.2026 (aksam) — PC/KONSOL YOLU KALDIRILDI. Kullanici
+        # karari: o iki kategori apex_predator'un KENDI botuyla
+        # (baslat.bat) eskiden oldugu gibi toplanacak; uzanti yalnizca
+        # OTOMOBIL topluyor. Kod git gecmisinde duruyor (commit 604a6b2
+        # ve 94c8738) — gerekirse geri alinabilir.
+        # Beklenmedik bir kategori gelirse sessizce yazmak yerine
+        # REDDEDILIR; yanlis DB'ye veri karismasindansa gorunur hata.
+        if kat != "otomobil" and not (ozet.get("ara_sayfa")
+                                      or ozet.get("challenge")):
+            print(f"{datetime.now():%H:%M:%S}  [RED] beklenmeyen "
+                  f"kategori='{kat}' — bu uzanti yalnizca otomobil "
+                  f"topluyor (PC/konsol: apex baslat.bat)")
+            self._cevap(400, f"desteklenmeyen kategori: {kat}")
             return
 
         if ozet.get("ara_sayfa"):
