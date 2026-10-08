@@ -1,0 +1,22 @@
+{
+  "_aciklama": "Uzantinin CANLI ayarlari. content.js her turda /ayar'dan okur, yani burayi degistirmek icin uzantiyi yeniden yuklemek GEREKMEZ. Bir gun icinde alti kez 'uzantiyi yenile' demek zorunda kaldiktan sonra eklendi (08.10.2026).",
+
+  "bekci_yenileme": true,
+  "_bekci_yenileme": "false yapilirsa bekci sekmeyi ASLA yenilemez. 08.10.2026'da bekcinin hatali bir yenilemesi PX blogu uretti; bu anahtar gerektiginde kullaniciya hic dokundurmadan susturmak icin var. Bekci ayrica artik sadece SUNUCU sessizlik dogrularsa ve saatte en fazla bir kez yeniliyor.",
+
+  "durdur": false,
+  "_durdur": "true yapilirsa toplayici tur atmayi birakir (tarayiciya dokunmadan durdurma).",
+
+  "aralik_min_sn": 50,
+  "aralik_max_sn": 80,
+  "_aralik": "Iki tur arasi rastgele bant. Olculen guvenli bant 56-80 sn. Not: arka plandaki sekmede tarayici zamanlayicilari dakikada bire kisiyor, bu yuzden gercek ara 60-120 sn cikabilir; tempoyu servis calisaninin alarmi da destekliyor.",
+
+  "varyant_mod": "ab",
+  "_varyant_mod": "duz = adres oldugu gibi | cachebust = adrese _=<ms> eklenir | ab = turlar donusumlu (deney). sahibinden jQuery kullaniyor ve '_' jQuery'nin kendi cache:false parametresi, yani sitenin kendi istek bicimi.",
+
+  "ofsetler": [0],
+  "_ofsetler": "Izlenecek sayfa ofsetleri, donusumlu. [0] = sadece birinci sayfa. [0,50] = birinci + ikinci sayfa (100 ilanlik pencere). Sitenin kendi sayfalama linki: /otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc. OLCUM: 50 slotluk birinci sayfa ~1 dakikada tamamen devriliyor, bu yuzden derinlik kaybi onlemek icin onemli.",
+
+  "sayfa_boyu": 50,
+  "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50."
+}

@@ -65,9 +65,76 @@ bu da bağımsız ölçülen arz hızıyla (dakikada ~4-5) birebir örtüşüyor
   milyarlık eski ID'ler güncellerin arasına serpiştirilmiş görünüyor.
   Kullanıcının "sıra karışık, reklam olduğu bile gözükmüyor" gözlemi
   tam olarak budur ve NORMALDİR.
-- **Sayfa boyu dar DEĞİL** (ikincil) — 50 slotluk birinci sayfa ~1
-  dakikada tamamen devriliyor (tur 45→46: 55 sn'de 51 kartın 51'i
-  değişti), ama önbellek penceresi yüzünden bunu göremiyoruz.
+- **Sayfa boyu dar DEĞİL** — ÖNCE "birinci sayfa ~1 dakikada
+  devriliyor" demiştim, **bu YANLIŞTI**. 55 sn arayla gelen iki turu
+  karşılaştırmıştım, ama onlar aynı anın iki görüntüsü değil, **iki ayrı
+  önbellek düğümünün** görüntüsüymüş.
+  DOĞRU ÖLÇÜM (iki anlık görüntünün ham HTML'i diskten karşılaştırıldı):
+  50 kart ve 51 kart, **SIFIR ortak ilan**; en büyük ID farkı 1494 →
+  global ~230 ID/dk ile **~6,5 dakikalık zaman farkı**.
+  → Birinci sayfa devrilme süresi: 50 slot / 6,5 dk ≈ **bir ilan birinci
+  sayfada ~6,5 dakika duruyor.**
+  → Snapshot'larımız 5,5 dk'da bir geliyor, sayfa 6,5 dk'da devriliyor;
+  **5,5 < 6,5 olduğu için ilan KAYBI YOK.** Bu, patlama hacminin
+  (~30 ilan/5,5 dk) arz hızıyla (~5/dk) örtüşmesini de açıklıyor.
+
+
+### İki önbellek düğümü (08.10.2026 öğleden sonra)
+
+Saklanan iki ham cevap karşılaştırıldığında ikisi de **aynı yapıda**
+(587 KB, 3 `nativeAd`, 1 `vitrin`) ama **sıfır ortak ilan** içeriyor ve
+biri diğerinden ~6,5 dakika daha yeni. Yani aynı adrese atılan isteklere
+**iki ayrı önbellek düğümü** cevap veriyor ve biz dönüşümlü olarak
+ikisine düşüyoruz. "51 kartın 51'i de yeni" turlarının açıklaması bu:
+düğüm değiştiğimizde sayfa tamamen devrilmiş olduğu için her şey yeni
+görünüyor. Kart sayısının 50/51 değişmesi de bundan — tür farkı değil,
+içerik farkı.
+
+Olumlu yan etki: iki düğümün pencereleri kayık olduğu için etkin
+tazelenme ~5,5 dk'ya iniyor (tek düğüm olsaydı ~6,5 olurdu).
+
+### ⚠️ BEKÇİ BİR PX BLOĞU ÜRETTİ — ders ve sertleştirme
+
+Olay zinciri: sunucu yeniden başlatıldı → `son_gorulme` boşaldı → bekçi
+sunucudan ölçüm alamayıp KENDİ bayat kaydına düştü → "282 sn sessiz"
+sanıp sekmeyi yeniledi → o **tam sayfa gezinmesi** PX tarafından
+bloklandı (`Access to this page has been denied`).
+
+Alınan önlemler:
+1. **Kanıt yoksa eylem yok** — bekçi yalnızca SUNUCU sessizliği
+   doğrularsa (`olcum === "sunucu"`) yeniler. Veri yolu doğrudan POST'a
+   taşındığından worker'ın yerel kaydı güncellenmiyor; ona dayanarak
+   karar vermek yasak.
+2. Eşikler: sessizlik 240 → **600 sn**, iki yenileme arası 300 → **3600
+   sn** (ölçülen önbellek penceresi ~5,5 dk olduğu için 6 dk sessizlik
+   normal olabilir).
+3. `ayar.json` → `bekci_yenileme: false` ile tamamen kapatılabilir.
+4. Sunucu açılışta `son_gorulme`'yi ŞİMDİ olarak dolduruyor (açılışta
+   elimizde sessizlik kanıtı yok).
+5. Challenge artık **bildiriliyor** (`[CHALLENGE]`): eskiden sessizce
+   geçiliyordu ve "PX'e yakalandık" ile "sekme öldü" ayırt edilemiyordu.
+
+### CANLI AYAR — `ayar.json` + `GET /ayar`
+
+Bir günde kullanıcıya **altı kez** "uzantıyı yenile + F5" demek zorunda
+kaldıktan sonra eklendi. `content.js` her turda `http://127.0.0.1:8765/ayar`
+okuyor; tempo, deney varyantı (`duz`/`cachebust`/`ab`), sayfa ofsetleri,
+sayfa boyu, acil durdurma ve bekçi yenilemesi **tarayıcıya hiç
+dokunulmadan** değiştirilebiliyor. Sunucu kapalıysa kod içindeki
+varsayılanlar geçerli.
+
+Ofset rotasyonu sitenin KENDİ sayfalama adresini kullanır (sayfanın
+kendi linklerinden alındı, uydurma değil):
+`/otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc`
+
+### Bugünün maliyeti (dürüst kayıt)
+
+Sunucu gün içinde **sekiz kez** yeniden başlatıldı. Her biri bir turu
+yuttu, biri Telegram kuyruğundaki 25 mesajı uçurdu (geri gönderildi),
+sonuncusu da yukarıdaki PX bloğunu üretti. Kullanıcının bütçesi günde
+3-4 elle müdahale; biri buna harcandı. Canlı ayar mekanizması tam bu
+maliyeti sıfırlamak için var — yeniden başlatma ve tıklama ihtiyacını
+birlikte kaldırıyor.
 
 ### Sıradaki iki deney (sıralama KASITLI — ikisini birden yaparsak
 hangisinin işe yaradığı ayırt edilemez)

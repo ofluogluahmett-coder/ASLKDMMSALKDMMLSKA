@@ -28,10 +28,25 @@
 const SUNUCU = "http://127.0.0.1:8765/ilan";
 const NABIZ = "http://127.0.0.1:8765/nabiz";
 const DURUM = "http://127.0.0.1:8765/durum";
+const AYAR = "http://127.0.0.1:8765/ayar";
 const LISTE_DESEN = "https://www.sahibinden.com/otomobil*";
 
-const SESSIZ_ESIK = 240;     // sn — bu kadar veri yoksa sekme olmus say
-const YENILEME_ARASI = 300;  // sn — iki yenileme arasi en az bu kadar
+// 08.10.2026 — BEKCI SERTLESTIRILDI, cunku bir PX blogu URETTI.
+// Olay zinciri: sunucu yeniden baslatildi -> son_gorulme bosaldi ->
+// bekci sunucudan cevap alamayip KENDI bayat kaydina dustu ->
+// "282 sn sessiz" sanip sekmeyi yeniledi -> o tam sayfa gezinmesi
+// PX tarafindan bloklandi ("Access to this page has been denied").
+// Kullanicinin kurali net: gunde 3-4 elle mudahaleyi gecmeyecegiz.
+// Yeni kurallar:
+//   1) KANIT YOKSA EYLEM YOK — sadece SUNUCU sessizlik derse yenilenir.
+//      Kendi yerel kaydina dayanarak ASLA yenileme yapilmaz.
+//   2) Esik yukseltildi: olculen onbellek penceresi ~5.5 dk oldugu icin
+//      6 dakikalik sessizlik normal olabilir; 10 dakika gercek arizadir.
+//   3) Saatte en fazla BIR yenileme (ping-pong freni).
+//   4) ayar.json'dan tamamen kapatilabilir (bekci_yenileme: false),
+//      boylece gerektiginde kullaniciya dokundurmadan susturulur.
+const SESSIZ_ESIK = 600;      // sn (10 dk)
+const YENILEME_ARASI = 3600;  // sn (1 saat)
 
 // ── 1) POSTACI ──────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((mesaj, _gonderen, cevapla) => {
@@ -110,11 +125,24 @@ async function bekciTuru() {
     }
   } catch (e) { /* sunucu kapali -> yerel kayit ile devam */ }
 
+  // ayar.json -> bekci_yenileme: false ise hic yenileme yapilmaz.
+  let yenilemeIzni = true;
+  try {
+    const ra = await fetch(AYAR, { cache: "no-store" });
+    if (ra.ok) {
+      const ay = await ra.json();
+      if (ay && ay.bekci_yenileme === false) yenilemeIzni = false;
+    }
+  } catch (e) { /* ayar okunamadi -> varsayilan izin */ }
+
   let eylem = "izliyor";
-  // Sekme var ama uzun suredir veri yok -> icindeki toplayici olmus.
-  // En yaygin sebep tarayicinin sekmeyi DONDURMASI; bu halde
-  // `discarded` false kalir, o yuzden ona BAKMIYORUZ.
-  if (sekmeler.length && sessizSn > SESSIZ_ESIK &&
+  // Sekme var ama uzun suredir veri yok -> icindeki toplayici olmus
+  // olabilir. KANIT SARTI: sessizligi SUNUCU dogrulamali (olcum ===
+  // "sunucu"). Kendi yerel kaydimiz veri yolu dogrudan POST'a
+  // tasindiginda guncellenmiyor; ona dayanarak yenileme yapmak bir PX
+  // blogu uretti. Kanit yoksa EYLEM YOK.
+  if (yenilemeIzni && kaynak === "sunucu" &&
+      sekmeler.length && sessizSn > SESSIZ_ESIK &&
       simdi - sonYenileme > YENILEME_ARASI) {
     const hedef = sekmeler.find((t) => t.discarded) || sekmeler[0];
     try {

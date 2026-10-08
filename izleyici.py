@@ -68,6 +68,27 @@ def main():
             time.sleep(ARALIK)
             continue
 
+        # ── sunucu yeniden mi baslatildi? ──
+        # Sayaclar sifirlandiginda izleyici bunu "kuraklik" sanip yanlis
+        # alarm veriyordu (08.10.2026). Baslangic damgasi degistiyse
+        # tum referanslar sifirlanir.
+        bas = d.get("baslangic")
+        if bas and onceki.get("baslangic") and bas != onceki["baslangic"]:
+            yaz(f"SUNUCU YENIDEN BASLADI ({bas[11:]}) — referanslar "
+                f"sifirlandi, bundan sonraki sayilar yeni oturumun")
+            onceki.clear()
+            alarmda = False
+        onceki["baslangic"] = bas
+
+        # ── challenge (PX dogrulama ekrani) ──
+        # PX kendiliginden GECMIYOR; sebebi biliyorsak alarmda adiyla
+        # soyle, "liste donmus olabilir" diye yanlis yone bakmayalim.
+        sc = d.get("son_challenge")
+        if sc and sc != onceki.get("son_challenge"):
+            yaz(f"CHALLENGE  sayfa dogrulama ekraninda ({sc[11:]}) — "
+                f"ELLE gecilmesi gerekiyor, PX kendi gecmiyor")
+        onceki["son_challenge"] = sc
+
         # ── veri akisi kesildi mi? ──
         sg = d.get("son_gorulme")
         gecen = None
@@ -107,8 +128,11 @@ def main():
                 and not onceki.get("kurakta")):
             onceki["kurakta"] = True
             dk = (time.time() - onceki["son_yeni_an"]) / 60
+            sebep = ("CHALLENGE ekraninda — elle gecilmeli"
+                     if d.get("son_challenge")
+                     else "liste donmus veya toplayici durmus olabilir")
             yaz(f"ALARM  {dk:.0f} dakikadir YENI ILAN yok "
-                f"(beklenen: dakikada ~5). Liste donmus olabilir — "
+                f"(beklenen: dakikada ~5). {sebep} — "
                 f"tur={d.get('son_tur')}, sunucu_turu={d.get('istek')}")
 
         # ── sayac artislari (sadece artarsa bildir) ──

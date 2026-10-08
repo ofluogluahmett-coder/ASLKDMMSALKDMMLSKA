@@ -47,7 +47,15 @@ PORT = 8765
 
 _sayac = {"istek": 0, "ilan": 0, "yeni": 0, "guncel": 0,
           "zengin_yeni": 0, "zengin_guncel": 0,
-          "baslangic": datetime.now().isoformat(timespec="seconds")}
+          "baslangic": datetime.now().isoformat(timespec="seconds"),
+          # 08.10.2026: acilista "az once gorulduk" varsayilir. Sebep:
+          # sunucu yeniden baslatildiginda son_gorulme bosaliyordu,
+          # bekci sunucudan cevap alamayip kendi bayat kaydina dusuyor
+          # ve SESSIZLIK sanip sekmeyi bosuna yeniliyordu (olcum:
+          # "sekme yenilendi (282 sn sessizdi)" — oysa yeni baslamistik).
+          # Acilista elimizde sessizlik KANITI yok; gercek sessizlik
+          # zaten esik kadar sonra yine yakalanir.
+          "son_gorulme": datetime.now().isoformat(timespec="seconds")}
 
 # Panel icin tur gecmisi (bellekte, son 25 tur)
 _gecmis = deque(maxlen=25)
@@ -487,6 +495,19 @@ class Isleyici(BaseHTTPRequestHandler):
                 {**_sayac, "db_toplam": toplam, **ek},
                 ensure_ascii=False, indent=1),
                 "application/json; charset=utf-8")
+        elif self.path.startswith("/ayar"):
+            # Uzantinin CANLI ayarlari. content.js her turda bunu okur,
+            # boylece deney/tempo degisikligi icin uzantiyi yeniden
+            # yuklemek GEREKMEZ (bir gunde alti kez kullaniciya
+            # "uzantiyi yenile" dedikten sonra eklendi).
+            try:
+                govde = (ROOT / "ayar.json").read_text(encoding="utf-8")
+            except Exception:
+                govde = json.dumps({"durdur": False, "aralik_min_sn": 50,
+                                    "aralik_max_sn": 80,
+                                    "varyant_mod": "duz", "ofsetler": [0],
+                                    "sayfa_boyu": 50})
+            self._cevap(200, govde, "application/json; charset=utf-8")
         elif self.path in ("/", "/panel", "/index.html"):
             self._cevap(200, panel_html(), "text/html; charset=utf-8")
         else:
@@ -547,6 +568,17 @@ class Isleyici(BaseHTTPRequestHandler):
             return
         yeni, guncel = ilan_yaz(kartlar, veri.get("kaynak") or "uzanti")
         ozet = veri.get("ozet") or {}
+        if ozet.get("challenge"):
+            # Sayfa challenge ekraninda. PX kendiliginden GECMIYOR
+            # (olculdu, kullanici teyit etti) -> elle gecilmesi gerekir.
+            _sayac["challenge"] = _sayac.get("challenge", 0) + 1
+            _sayac["son_challenge"] = datetime.now().isoformat(
+                timespec="seconds")
+            print(f"{datetime.now():%H:%M:%S}  [CHALLENGE] sayfa dogrulama "
+                  f"ekraninda (tur={ozet.get('tur')}) — ELLE GECILMESI "
+                  f"gerekiyor, PX kendi gecmiyor")
+            self._cevap(200, "challenge kaydedildi")
+            return
         if ozet.get("kayip"):
             # Sayfa tarafi "onceki N gonderim basarisiz oldu" diyor.
             # 08.10'da bu gorunmedigi icin 13 tur sessizce kayboldu.

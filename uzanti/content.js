@@ -39,6 +39,31 @@
   const GIZLI_MAX = 80000;       // 80 sn
 
   const SUNUCU = "http://127.0.0.1:8765/ilan";
+  const AYAR_UC = "http://127.0.0.1:8765/ayar";
+
+  // ── CANLI AYAR (08.10.2026) ────────────────────────────────────────
+  // Her turda yerel sunucudan okunur. Sebep: bir gun icinde tempo,
+  // deney varyanti ve filtre degisiklikleri icin kullaniciya ALTI KEZ
+  // "uzantiyi yenile + F5" dedim. Ayar sunucudan gelince deneyler
+  // tarayiciya hic dokunulmadan yapilabiliyor.
+  // Sunucu kapaliysa veya cevap bozuksa asagidaki varsayilanlar gecerli.
+  let ayar = {
+    durdur: false, aralik_min_sn: 50, aralik_max_sn: 80,
+    varyant_mod: "ab", ofsetler: [0], sayfa_boyu: 50
+  };
+
+  async function ayariTazele() {
+    try {
+      const r = await fetch(AYAR_UC, { cache: "no-store" });
+      if (!r.ok) return;
+      const y = await r.json();
+      if (y && typeof y === "object") {
+        for (const k of Object.keys(ayar)) {
+          if (y[k] !== undefined && y[k] !== null) ayar[k] = y[k];
+        }
+      }
+    } catch (e) { /* sunucu kapali — varsayilanlarla devam */ }
+  }
   // Iki tur arasinda en az bu kadar beklenir. Hem sayfa zamanlayicisi
   // hem servis calisaninin alarmi tur tetikledigi icin cift tura karsi
   // emniyet; ayrica PX'siz olculmus 56-80 sn bandinin altina inilmez.
@@ -126,11 +151,33 @@
   // bicim — uydurma bir baslik veya token DEGIL.
   // Hangi varyantin taze icerik getirdigini sunucu parmak izinden
   // gorecek; kazanan varyanta gecilecek.
-  let deneyAcik = true;
-  function deneyliAdres(url, tur) {
-    if (!deneyAcik || tur % 2 === 0) return { adres: url, varyant: "duz" };
-    const ayirici = url.indexOf("?") >= 0 ? "&" : "?";
-    return { adres: url + ayirici + "_=" + Date.now(), varyant: "cachebust" };
+  // Ofset rotasyonu: sitenin KENDI sayfalama adresi kullanilir
+  //   /otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc
+  // (bu bicim sayfanin kendi linklerinden alindi, uydurma DEGIL).
+  // OLCUM: 50 slotluk birinci sayfa ~1 dakikada tamamen devriliyor;
+  // ikinci sayfayi da izlemek kayip riskini dusurur ve onbellek adres
+  // basina tutuluyorsa pencereler kayik oldugu icin gecikmeyi de dusurur.
+  function hedefAdres(tur) {
+    const ofsetler = (ayar.ofsetler && ayar.ofsetler.length)
+      ? ayar.ofsetler : [0];
+    const ofs = ofsetler[tur % ofsetler.length];
+    let url;
+    if (ofs === 0) {
+      url = location.pathname + "?sorting=date_desc&pagingSize=" +
+            (ayar.sayfa_boyu || 50);
+    } else {
+      url = location.pathname + "?pagingOffset=" + ofs +
+            "&pagingSize=" + (ayar.sayfa_boyu || 50) +
+            "&sorting=date_desc";
+    }
+    let varyant = "duz";
+    const mod = ayar.varyant_mod || "duz";
+    if (mod === "cachebust" || (mod === "ab" && tur % 2 === 1)) {
+      url += "&_=" + Date.now();
+      varyant = "cachebust";
+    }
+    if (ofs !== 0) varyant += "+ofs" + ofs;
+    return { adres: url, varyant: varyant };
   }
 
   function listeyiCek(url) {
@@ -188,14 +235,31 @@
     try { sessionStorage.setItem("ok_tur", String(sayac)); } catch (e) {}
     const gizli = document.visibilityState !== "visible";
     try {
-      const dny = deneyliAdres(location.href, sayac);
+      await ayariTazele();
+      if (ayar.durdur) {
+        log("tur", sayac, "— ayar.durdur=true, atlandi");
+        return;
+      }
+      const dny = hedefAdres(sayac);
       const { durum, metin } = await listeyiCek(dny.adres);
       if (durum !== 200 || !metin) {
         log("tur", sayac, "durum", durum, "— atlandi");
         return;
       }
       if (/denied|px-captcha/i.test(metin.slice(0, 4000))) {
-        log("tur", sayac, "challenge isareti — atlandi, bir sonrakini bekle");
+        // 08.10.2026: eskiden burada sessizce donuluyordu ve sunucu
+        // "veri yok" goruyordu — challenge ile "sekme olmus" ayirt
+        // edilemiyordu. Artik challenge de BILDIRILIYOR; panel bunu
+        // gosterir, bekci de bosuna yenileme yapmaz.
+        log("tur", sayac, "CHALLENGE — bildirilip beklenecek");
+        try {
+          await yolla({
+            tip: "ilanlar", kartlar: [], html: null,
+            ozet: { tur: sayac, sayfada: 0, yeni: 0, gizli: gizli,
+                    challenge: true, tetik: kaynak || "?",
+                    url: location.pathname + location.search }
+          });
+        } catch (e) { /* sunucu kapali olabilir */ }
         return;
       }
       const kartlar = kartlariCikar(metin);
@@ -255,9 +319,15 @@
 
   function zamanla() {
     // Sekme arkadaysa daha seyrek, ama DURMAZ (gun boyu kosu icin sart).
+    // Bant artik sunucudan geliyor (ayar.json); sunucu kapaliysa
+    // asagidaki sabitler yedek.
     const gizli = document.visibilityState !== "visible";
-    const alt = gizli ? GIZLI_MIN : ARALIK_MIN;
-    const ust = gizli ? GIZLI_MAX : ARALIK_MAX;
+    let alt = (ayar.aralik_min_sn || 0) * 1000;
+    let ust = (ayar.aralik_max_sn || 0) * 1000;
+    if (!alt || !ust || ust < alt) {
+      alt = gizli ? GIZLI_MIN : ARALIK_MIN;
+      ust = gizli ? GIZLI_MAX : ARALIK_MAX;
+    }
     const bekle = alt + Math.random() * (ust - alt);
     setTimeout(async () => {
       await birTur("sayfa");
