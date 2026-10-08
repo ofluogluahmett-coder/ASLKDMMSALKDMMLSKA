@@ -18,8 +18,9 @@
   "_pc_tg_tavan": "PC bileseni scraper kanalina bir turda en fazla kac yeni ilan dusecek.",
   "tg_foto": true,
   "_tg_foto": "false yapilirsa ilanlar fotosuz (metin) gider. OLCUM: fotolu gonderim mesaj basina medyan 6 sn / ortalama 11 sn -> kapasite dakikada ~5.5 mesaj; darbogaz Telegram'in gorseli sahibinden'den CEKMESI. Kuyruk sismeye baslarsa bunu kapat: kapasite kat kat artar. Bayat fotolu ilan yerine taze metin tercih edilir.",
-  "tg_tur_tavan": 3,
-  "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu â€” sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim hizi dakikada ~6, uretim ise ~12. Uretim gonderimi gectigi surece ilanlar BAYAT duser ve tazelik kazancimiz cope gider. 3 = dakikada ~3 mesaj, gonderim kapasitesinin altinda. Kalici cozum kelepir skorlamasi (saatte 5-19 ilan).",
+  "tg_tur_tavan": 2,
+  "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu â€” sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim | 15:30 GUNCELLEME: tavan 3 iken kuyruk 7 mesajda takildi (uretim ~4/dk, kapasite ~5.5/dk, ozet satiri da sayiliyor). 2 yapildi: uretim ~3/dk, pay acildi.",
   "sayfa_boyu": 50,
-  "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50."
+  "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50.",
+  "_durdur_sebep": "15:45 — TEMIZ PROFIL denemesi icin tekrar acildi. Onceki durus sebebi: senin ana profilindeki sahibinden oturumu 2 ASAMALI DOGRULAMA istedi ve SMS ESKI/KULLANILMAYAN numaraya gidiyor -> gecilemez. Cozum: toplayici hic giris yapilmamis AYRI Brave profilinde kosacak (hesap yok -> 2FA yok). PC botu da ayni mantikla anonim kosuyor ve sorunsuz."
 }

@@ -15,7 +15,8 @@
     {
       "matches": [
         "https://www.sahibinden.com/otomobil*",
-        "https://www.sahibinden.com/masaustu-donanim*"
+        "https://www.sahibinden.com/masaustu-donanim*",
+        "https://www.sahibinden.com/oyun-konsolu*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

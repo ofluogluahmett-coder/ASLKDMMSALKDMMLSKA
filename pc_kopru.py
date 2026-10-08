@@ -111,8 +111,11 @@ def motor():
 _RE_SAYI = re.compile(r"[^\d]")
 
 
-def kartlari_ayristir(html):
-    """Doner: [{id, baslik, fiyat, gorsel, url}, ...]"""
+def kartlari_ayristir(html, konsol=False):
+    """Doner: [{id, baslik, fiyat, gorsel, url}, ...]
+
+    konsol=True ise ilan linki oyun-konsolu kategorisine gore kurulur.
+    """
     try:
         from bs4 import BeautifulSoup
     except Exception as e:
@@ -143,8 +146,10 @@ def kartlari_ayristir(html):
         out.append({
             "id": iid, "baslik": baslik, "fiyat": float(fiyat_t),
             "gorsel": gorsel,
-            # apex botunun urettigi link bicimi (masaustu donanim)
-            "url": ("https://www.sahibinden.com/ilan/ikinci-el-ve-sifir-"
+            # apex botunun urettigi link bicimi
+            "url": (f"https://www.sahibinden.com/ilan/{iid}/detay"
+                    if konsol else
+                    "https://www.sahibinden.com/ilan/ikinci-el-ve-sifir-"
                     f"alisveris-bilgisayar-masaustu-ilan-{iid}/detay"),
         })
     return out
@@ -271,6 +276,115 @@ def html_isle(html, tg_tavan=5):
         gorulen.add(k["id"])
     _gorulen_kaydet()
     _sayac["yazilan"] += yazilan
+    return yazilan, len(yeni), len(kartlar)
+
+
+# ── KONSOL KATEGORISI ────────────────────────────────────────────────
+# apex botunun konsol_kaydet_db() + _konsol_temizle() + _istatistik_guncelle()
+# mantigi BIREBIR tasindi. Neden kopyalandi: bu uc fonksiyon
+# sahibinden_bot.py icinde ve o modul ice aktarilamaz (modul duzeyinde
+# kuyruk/isci kurulumu var). Ama kullandiklari her sey (PREFIXLER,
+# KONSOL_AKTIF, tani_konsol_modeli, KelepirMotor._kesik_ortalama)
+# kelepir_motor'dan geliyor, yani FILTRE MANTIGI ayni kaynaktan.
+#
+# Korunan kurallar (29.08.2026 kararlari):
+#   - fiyat bandi 8.000-120.000 TL (PS5/Series X bu bandin altinda olmaz)
+#   - KONSOL_AKTIF beyaz listesi: sadece PS5 varyantlari + Xbox Series X/S
+#   - model taninmazsa VEYA listede yoksa KAYDEDILMEZ
+KONSOL_ALT, KONSOL_UST = 8000, 120000
+
+
+def _konsol_temizle(baslik, prefixler):
+    import unicodedata
+    baslik = baslik.replace("̇", "")      # combining dot (İ -> i̇)
+    temiz = unicodedata.normalize("NFC", baslik).lower().strip()
+    temiz = "".join(c for c in temiz
+                    if unicodedata.category(c) != "Mn")
+    for p in prefixler:
+        temiz = temiz.replace(p.lower(), " ")
+    temiz = re.sub(r"\d[\d.,]*\s*tl\b", " ", temiz)
+    temiz = re.sub(r"\d+\s*taksit", " ", temiz)
+    return re.sub(r"\s+", " ", temiz).strip()
+
+
+def _istatistik_guncelle(km, con, urun, tier):
+    from datetime import datetime as _dt
+    fiyatlar = [r[0] for r in con.execute(
+        "SELECT fiyat FROM fiyat_gecmisi WHERE urun=? AND tier=?",
+        (urun, tier)).fetchall()]
+    if not fiyatlar:
+        return
+    ort = round(km.KelepirMotor._kesik_ortalama(fiyatlar), 0)
+    con.execute("""
+        INSERT INTO urun_istatistik
+            (urun_tier, urun, tier, ortalama, min_fiyat, max_fiyat,
+             ilan_sayisi, guncellendi)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(urun_tier) DO UPDATE SET
+            ortalama=excluded.ortalama, min_fiyat=excluded.min_fiyat,
+            max_fiyat=excluded.max_fiyat,
+            ilan_sayisi=excluded.ilan_sayisi,
+            guncellendi=excluded.guncellendi
+    """, (f"{urun}__t{tier}", urun, tier, ort, min(fiyatlar),
+          max(fiyatlar), len(fiyatlar),
+          _dt.now().isoformat(timespec="seconds")))
+
+
+def konsol_isle(html):
+    """Konsol liste HTML'ini isle. Doner: (yazilan, yeni, toplam)."""
+    if not motor() or not html:
+        return 0, 0, 0
+    import kelepir_motor as km
+    try:
+        kartlar = kartlari_ayristir(html, konsol=True)
+    except Exception as e:
+        print(f"  [pc_kopru konsol] ayristirma: {str(e)[:110]}")
+        return 0, 0, 0
+    if not kartlar:
+        return 0, 0, 0
+
+    gorulen = _gorulen_yukle()
+    yeni = [k for k in kartlar if ("k" + k["id"]) not in gorulen]
+    yazilan = 0
+    try:
+        con = km.db_baglan(str(APEX / "kelepir_hafiza.db"))
+    except Exception as e:
+        print(f"  [pc_kopru konsol] DB: {str(e)[:110]}")
+        return 0, 0, len(kartlar)
+    try:
+        for k in yeni:
+            f = k["fiyat"]
+            if f < KONSOL_ALT or f > KONSOL_UST:
+                continue
+            temiz = _konsol_temizle(k["baslik"], km.PREFIXLER)[:100]
+            if not temiz:
+                continue
+            model = km.tani_konsol_modeli(temiz)
+            if not model or model not in km.KONSOL_AKTIF:
+                continue            # taninmadi veya beyaz listede yok
+            urun = f"konsol:{model}"
+            try:
+                con.execute(
+                    "INSERT INTO fiyat_gecmisi (urun, tier, fiyat, "
+                    "platform, url, gorsel, tarih) VALUES "
+                    "(?, 3, ?, 'sahibinden', ?, ?, "
+                    "datetime('now','localtime'))",
+                    (urun, f, k["url"], k["gorsel"]))
+                _istatistik_guncelle(km, con, urun, 3)
+                yazilan += 1
+            except Exception:
+                _sayac["atlanan"] += 1
+        con.commit()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+    for k in kartlar:
+        gorulen.add("k" + k["id"])
+    _gorulen_kaydet()
+    _sayac["konsol_yazilan"] = _sayac.get("konsol_yazilan", 0) + yazilan
     return yazilan, len(yeni), len(kartlar)
 
 

@@ -1,7 +1,129 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 08.10.2026 — önbellek KIRILDI (cachebust): taze ilan 17 kat arttı, gecikme 3 dk → ~40 sn, kayıp kapandı.
+**Son güncelleme:** 08.10.2026 (akşam) — PC kategorisi de uzantıya taşındı; 2FA duvarı dersi: yük TEK oturuma yığılmamalı, oturumlar ANONİM olmalı.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 08.10.2026 (akşam) — PC PORTU + ⚠️ 2FA DUVARI DERSİ
+
+### Yapılan: PC bileşeni + konsol uzantıya taşındı
+
+`pc_kopru.py` — apex_predator'un KANITLANMIŞ motorunu içe aktarır:
+- `kelepir_motor.KelepirMotor().veri_kaydet()` ile
+  `kelepir_hafiza.db`'ye yazar; gereksiz/kombo/anomali filtreleri,
+  normalizasyon, GPU tier, dinamik ortalama HEPSİ çalışır
+- `kelepir_avci.py` zaten `fiyat_gecmisi`'ni izlediği için
+  FIRSAT/VURGUN bildirimleri KENDİLİĞİNDEN gider (yeniden yazılmadı)
+- konsol: `konsol_kaydet_db` mantığı birebir taşındı (8.000-120.000
+  bandı + `KONSOL_AKTIF` beyaz listesi: 7 model). Test:
+  "Büyük İlan Elden Al, ! PS5 SLİM DİJİTAL 2 KOL 45.000 TL" →
+  `ps5 slim dijital`; `ps4 pro` → reddedildi ✓
+- `sahibinden_bot.py` MODÜLÜ İÇE AKTARILMAZ (modül düzeyinde
+  kuyruk/işçi kurulumu var)
+- DB yolu: ilk çözüm `os.chdir(APEX)` idi, VAZGEÇİLDİ — cwd sürece
+  aittir, sunucu çok iş parçacıklı. Motorun tüm iç çağrıları
+  `db_baglan(DB_FILE)` şeklinde yolu çağrı anında okuduğu için
+  modül sabitini mutlaklaştırmak yeterli.
+
+Doğrulandı — iki kategori aynı anda, birbirini yavaşlatmadan:
+```
+15:27:12  [PC] tur=8   sayfada=50  yeni=2  DB'ye yazilan=2
+15:27:19  tur=294      sayfada=50  yeni=22  | tg 3+9 ozet
+15:28:19  [PC] tur=9   sayfada=51  yeni=2  DB'ye yazilan=2
+```
+
+### ⚠️ 2 AŞAMALI DOĞRULAMA DUVARI — en pahalı ders
+
+15:34'te üçüncü sekmeyi (konsol) açtıktan kısa süre sonra sahibinden
+**"2 Aşamalı Doğrulama"** ekranı çıkardı ve TÜM oturum durdu (tek tur
+gelmedi). Üstelik SMS kullanıcının **eski, erişemediği numarasına**
+gidiyor → geçilemez. O profildeki sahibinden oturumu kullanılamaz oldu.
+
+**Sebep (kendi hatam):** aynı oturumun istek hacmini yarım saatte ÜÇE
+katladım (15:08 PC sekmesi + 15:34 konsol sekmesi). Sabahtan beri TEK
+sekmeyle 165 dakika PX'siz gitmişti. "Tek değişkenle ilerle" kuralımı
+kendim bozdum.
+
+**İkinci ders — GİRİŞ YAPILI tarama RİSKTİR:** 2FA hesap düzeyinde bir
+duvar. Tarama giriş yapılı oturumda olduğu için risk kullanıcının
+KİMLİĞİNE bağlandı. Projenin kendi notu da bunu söylüyordu: PC botunda
+CF spam'inin kök nedeni damgalı kalıcı profildi, ANONİM moda geçince
+bitti. Bundan sonra kural: **toplayıcı oturumu anonim olacak, hesaba
+bağlanmayacak.**
+
+### Kullanıcının çözümü: İKİ AYRI OTURUM (doğru mimari)
+
+Kullanıcı "otobot ayrı kalsın, normal PC botunu farklı bir Brave'den
+çalıştıralım" dedi. Denendi ve ÇALIŞTI:
+
+| Oturum | Ne | Profil | Durum |
+|---|---|---|---|
+| 1 | otomobil (uzantı) | kullanıcının Brave'i | 2FA duvarı → anonime taşınacak |
+| 2 | PC + konsol (`sahibinden_bot.py`) | kendi geçici profili, anonim | ✅ sorunsuz |
+
+```
+[TUR 1] 15:39:56  yeni=20  yukle=4.74s   <- 2FA duvari ayni IP'de dururken
+[TUR 2] 15:40:54  yeni= 2  yukle=0.83s      bot SORUNSUZ tariyor
+```
+
+**Kanıt değeri:** duvarlar OTURUM düzeyinde, IP düzeyinde DEĞİL. Dün
+gece tersinden de görülmüştü (uzantı 305 ilan toplarken bot aynı IP'den
+bloklanıyordu). Yükü iki ayrı oturuma dağıtmak tek oturuma yığmaktan
+daha güvenli.
+
+### `--load-extension` ÇALIŞMIYOR (Brave 155)
+
+Temiz profil `--profile-directory=OtoKelepir --load-extension=...`
+ile açıldı: profil oluştu ama `Extensions` klasörü YOK, uzantı
+yüklenmedi, sunucuya hiç tur gelmedi (bekçi raporları tek uzantıdan,
+`sekme=0`). Temiz profilde uzantı ELLE yüklenmeli
+(brave://extensions → Geliştirici modu → Paketlenmemiş yükle).
+
+### Bu oturumda düzeltilen diğer hatalar
+
+1. **fetch zaman aşımı yokluğu → KALICI DURUŞ.** Toplayıcı 14:59'da
+   sessizce durdu; sekme açık, sayfa sağlam, PX yok. Sebep: `fetch`
+   çağrılarına timeout koymamıştım. İstek asılı kalınca `await`
+   dönmez, `finally` çalışmaz, `calisiyor` bayrağı sonsuza
+   kadar true kalır → her tur anında geri döner. XHR'ın 20 sn timeout'u
+   vardı, fetch'ler atlanmıştı. Düzeltme: `fetchZamanli()`
+   (AbortController; ayar 5 sn, POST 20 sn) + bir tur 3 dakikayı geçerse
+   bayrağı ZORLA bırakma.
+2. **Sitenin kendi ara sayfası PX sanıldı.** İki tur `sayfada=0`
+   döndü; kaydedilen ham sayfa 7,5 KB ve başlığı "sahibinden.com
+   Yükleniyor" — yani `/cs/tloading`. Ne PX ne Cloudflare; geçici
+   (sonraki tur 51 ilanla döndü). Artık `[ARA SAYFA]` diye ayrı
+   işaretleniyor. Üç durumun tepkisi farklı: ara sayfa = BEKLE,
+   PX = ELLE GEÇ, ölü sekme = YENİLE.
+3. **İki bot çakışması.** `durdur.ps1` TÜM chromedriver'ları ve
+   `Temp\|scoped_dir|--test-type|remote-debugging-port` taşıyan
+   TÜM tarayıcıları öldürüyordu — apex'in PC botu da undetected_
+   chromedriver + anonim geçici profil kullanıyor, yani bu betik PC
+   BOTUNU ÖLDÜRÜYORDU. Artık hedef, OTO python sürecinin SOYUNDAN
+   gelenler (soyağacı yürünür); yetim taraması PC botu çalışıyorsa
+   ATLANIR. `temizle.ps1` ise PC botu çalışıyorken devre dışı.
+4. **Telegram kuyruğu boğulması.** Tavan 12 iken kuyrukta 411 mesaj
+   birikti, kanal 14 DAKİKA geriye düştü (üretim ~12/dk, kapasite
+   ~5,5/dk — darboğaz `sendPhoto`'nun görseli Telegram'a
+   çektirmesi). Tavan 12 → 3 → 2, artık `ayar.json`'dan CANLI.
+   `tg_foto` anahtarı da canlı (kapatılınca kapasite kat kat
+   artar).
+5. **Ortak eklendi.** Besleme özel sohbete yazıyordu, özel sohbet
+   PAYLAŞILAMAZ. Ortak botu kendisi başlatmış olduğu için
+   `TELEGRAM_CHAT_ID` virgüllü listeye çevrildi; bir hedef hata
+   verirse diğerleri etkilenmez. Grup kurulursa
+   `arac_tg_kanal.py` hedefi bulup .env'e yazar.
+
+### Sıradaki
+
+1. Otomobil toplayıcısını ANONİM oturuma taşı (sahibinden site verisini
+   sil ya da temiz profilde uzantıyı elle yükle). Giriş YAPMA.
+2. Tek kategoriyle başla, akışın temiz döndüğünü gör; PC ve konsolu
+   saatler arayla ekle. Kategori eklemek BEDAVA DEĞİL — her sekme
+   oturumun istek hacmini artırıyor ve site hacme bakıyor.
+3. Kelepir skorlamasını bildirime bağla (ham akış dakikada ~6 mesaj =
+   okunamaz; skorlama saatte 5-19).
 
 ---
 

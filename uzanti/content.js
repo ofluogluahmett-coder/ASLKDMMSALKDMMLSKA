@@ -42,8 +42,10 @@
   const AYAR_UC = "http://127.0.0.1:8765/ayar";
 
   // Hangi kategorideyiz? Sunucu yonlendirmeyi buna gore yapiyor.
-  const KATEGORI = location.pathname.indexOf("masaustu-donanim") >= 0
-    ? "pc" : "otomobil";
+  const KATEGORI =
+    location.pathname.indexOf("masaustu-donanim") >= 0 ? "pc" :
+    location.pathname.indexOf("oyun-konsolu") >= 0 ? "konsol" :
+    "otomobil";
 
   // ── CANLI AYAR (08.10.2026) ────────────────────────────────────────
   // Her turda yerel sunucudan okunur. Sebep: bir gun icinde tempo,
@@ -266,6 +268,27 @@
       const { durum, metin } = await listeyiCek(dny.adres);
       if (durum !== 200 || !metin) {
         log("tur", sayac, "durum", durum, "— atlandi");
+        return;
+      }
+      // ── SITENIN KENDI ARA SAYFASI (08.10.2026) ───────────────────
+      // OLCUM: 15:10-15:11'de iki tur "sayfada=0" dondu ve PX sanildi.
+      // Kaydedilen ham sayfa 7,5 KB ve basligi "sahibinden.com
+      // Yukleniyor" — yani sitenin KENDI /cs/tloading ara sayfasi.
+      // Bu ne PX ne Cloudflare; gecici ve kendiliginden gecen bir
+      // durum (bir sonraki tur 51 ilanla dondu). Ucunu birbirinden
+      // ayirmazsak her birine yanlis tepki veririz.
+      if (/cs\/tloading|btn-continue/i.test(metin.slice(0, 6000)) ||
+          /<title[^>]*>[^<]*Y[uü]kleniyor/i.test(metin.slice(0, 3000))) {
+        log("tur", sayac, "ARA SAYFA (sahibinden yukleniyor) — gecici");
+        try {
+          await yolla({
+            tip: "ilanlar", kartlar: [], html: null,
+            ozet: { tur: sayac, sayfada: 0, yeni: 0, gizli: gizli,
+                    ara_sayfa: true, kategori: KATEGORI,
+                    tetik: kaynak || "?",
+                    url: location.pathname + location.search }
+          });
+        } catch (e) { /* sunucu kapali olabilir */ }
         return;
       }
       if (/denied|px-captcha/i.test(metin.slice(0, 4000))) {

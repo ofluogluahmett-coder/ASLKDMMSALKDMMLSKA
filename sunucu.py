@@ -428,6 +428,31 @@ def panel_html():
          _kutu("Hafiza ilan", hafiza_ilan),
          _kutu("Skorlanabilir", hafiza_skor),
          '</div>']
+    # ── PC BILESENI (varsa) ──
+    if _sayac.get("pc_istek"):
+        pcd = {}
+        if _pc_kopru:
+            try:
+                pcd = _pc_kopru.durum()
+            except Exception:
+                pcd = {}
+        yas = ""
+        if _sayac.get("pc_son_gorulme"):
+            try:
+                s = int((datetime.now() - datetime.fromisoformat(
+                    _sayac["pc_son_gorulme"])).total_seconds())
+                yas = f" &middot; son tur {s} sn once"
+            except Exception:
+                pass
+        p.append('<h2>PC bileseni (apex motoru)</h2><div class="kutular">' +
+                 _kutu("PC turu", _sayac.get("pc_istek", 0)) +
+                 _kutu("DB'ye yazilan", _sayac.get("pc_yazilan", 0)) +
+                 _kutu("kelepir_hafiza", pcd.get("db_toplam", "?")) +
+                 _kutu("Bugun", pcd.get("db_bugun", "?")) +
+                 _kutu("Kanala giden", pcd.get("tg_gonderildi", 0)) +
+                 '</div><div class="alt">FIRSAT/VURGUN bildirimleri '
+                 'kelepir_avci.py uzerinden gider (DB izleyicisi)' +
+                 yas + '</div>')
     if _sayac.get("kayip") or _sayac.get("bozuk"):
         p.append('<div class="nabiz sessiz">DIKKAT: ' +
                  str(_sayac.get("kayip", 0)) + ' gonderim sayfa tarafinda '
@@ -533,6 +558,11 @@ class Isleyici(BaseHTTPRequestHandler):
                     timespec="seconds")
             if oto_tg is not None:
                 ek["telegram"] = oto_tg.durum()
+            if _pc_kopru:                      # sadece yuklendiyse
+                try:
+                    ek["pc"] = _pc_kopru.durum()
+                except Exception:
+                    pass
             ek["su_seviyesi"] = _su_seviyesi
             ek["bekci"] = _bekci or None
             self._cevap(200, json.dumps(
@@ -618,7 +648,12 @@ class Isleyici(BaseHTTPRequestHandler):
         kat = (veri.get("kategori") or ozet.get("kategori")
                or ("pc" if "masaustu-donanim" in str(ozet.get("url", ""))
                    else "otomobil"))
-        if kat == "pc":
+        # Kategoriden BAGIMSIZ durumlar once ele alinir (ara sayfa /
+        # challenge her iki kategoride de olabilir; PC dali bunlari
+        # yutmasin).
+        if ozet.get("ara_sayfa") or ozet.get("challenge"):
+            pass          # asagidaki ozel bloklar isler
+        elif kat in ("pc", "konsol"):
             ham_pc = veri.get("html") or ""
             k = pc_kopru()
             if not k:
@@ -626,29 +661,48 @@ class Isleyici(BaseHTTPRequestHandler):
                 return
             try:
                 with _kopru_kilit:
-                    tavan = 5
-                    try:
-                        _a = json.loads((ROOT / "ayar.json")
-                                        .read_text(encoding="utf-8"))
-                        tavan = int(_a.get("pc_tg_tavan") or 5)
-                    except Exception:
-                        pass
-                    yazilan, yeni_s, toplam = k.html_isle(ham_pc, tavan)
+                    if kat == "konsol":
+                        # Konsolun KENDI filtreleri var (fiyat bandi
+                        # 8-120 bin + KONSOL_AKTIF beyaz listesi), bu
+                        # yuzden ayri yol. Scraper kanalina akmaz —
+                        # apex botunda da akmiyordu, sadece veri toplar.
+                        yazilan, yeni_s, toplam = k.konsol_isle(ham_pc)
+                    else:
+                        tavan = 5
+                        try:
+                            _a = json.loads((ROOT / "ayar.json")
+                                            .read_text(encoding="utf-8"))
+                            tavan = int(_a.get("pc_tg_tavan") or 5)
+                        except Exception:
+                            pass
+                        yazilan, yeni_s, toplam = k.html_isle(ham_pc, tavan)
             except Exception as e:
-                print(f"  [pc hatasi] {str(e)[:120]}")
-                self._cevap(500, "pc isleme hatasi")
+                print(f"  [{kat} hatasi] {str(e)[:120]}")
+                self._cevap(500, f"{kat} isleme hatasi")
                 return
-            _sayac["pc_istek"] = _sayac.get("pc_istek", 0) + 1
-            _sayac["pc_yazilan"] = _sayac.get("pc_yazilan", 0) + yazilan
-            _sayac["pc_son_gorulme"] = datetime.now().isoformat(
+            _sayac[f"{kat}_istek"] = _sayac.get(f"{kat}_istek", 0) + 1
+            _sayac[f"{kat}_yazilan"] = (
+                _sayac.get(f"{kat}_yazilan", 0) + yazilan)
+            _sayac[f"{kat}_son_gorulme"] = datetime.now().isoformat(
                 timespec="seconds")
-            print(f"{datetime.now():%H:%M:%S}  [PC] tur="
+            print(f"{datetime.now():%H:%M:%S}  [{kat.upper():6}] tur="
                   f"{ozet.get('tur', '?'):>4}  sayfada={toplam:3}  "
                   f"yeni={yeni_s:3}  DB'ye yazilan={yazilan:3}")
-            self._cevap(200, f"pc yeni={yeni_s} yazilan={yazilan}")
+            self._cevap(200, f"{kat} yeni={yeni_s} yazilan={yazilan}")
             return
 
-        yeni, guncel = ilan_yaz(kartlar, veri.get("kaynak") or "uzanti")
+        if ozet.get("ara_sayfa"):
+            # sahibinden'in KENDI /cs/tloading ara sayfasi — PX DEGIL,
+            # Cloudflare DEGIL. Gecici; bir sonraki tur normale donuyor.
+            # Ucunu ayirt etmek sart: her birine verilecek tepki farkli
+            # (ara sayfa = bekle, PX = elle gec, olu sekme = yenile).
+            _sayac["ara_sayfa"] = _sayac.get("ara_sayfa", 0) + 1
+            print(f"{datetime.now():%H:%M:%S}  [ARA SAYFA] sahibinden "
+                  f"'yukleniyor' sayfasi dondu (tur={ozet.get('tur')}, "
+                  f"kategori={kat}) — gecici, beklenecek "
+                  f"(toplam {_sayac['ara_sayfa']})")
+            self._cevap(200, "ara sayfa kaydedildi")
+            return
         if ozet.get("challenge"):
             # Sayfa challenge ekraninda. PX kendiliginden GECMIYOR
             # (olculdu, kullanici teyit etti) -> elle gecilmesi gerekir.
@@ -660,6 +714,9 @@ class Isleyici(BaseHTTPRequestHandler):
                   f"gerekiyor, PX kendi gecmiyor")
             self._cevap(200, "challenge kaydedildi")
             return
+        # Buraya gelen: normal OTOMOBIL turu (PC dali ve ara sayfa /
+        # challenge bloklari yukarida geri dondu).
+        yeni, guncel = ilan_yaz(kartlar, veri.get("kaynak") or "uzanti")
         if ozet.get("kayip"):
             # Sayfa tarafi "onceki N gonderim basarisiz oldu" diyor.
             # 08.10'da bu gorunmedigi icin 13 tur sessizce kayboldu.
