@@ -143,6 +143,30 @@ def main():
                 f"(beklenen: dakikada ~5). {sebep} — "
                 f"tur={d.get('son_tur')}, sunucu_turu={d.get('istek')}")
 
+        # ── PC BILESENI (08.10.2026 — ayni uzanti o kategoriyi de iziyor)
+        # Iki kategori ayri sekmelerde dondugu icin biri durup digeri
+        # calismaya devam edebilir; o yuzden ayri izlenir.
+        pcs = d.get("pc_son_gorulme")
+        if pcs:
+            try:
+                pgecen = (datetime.now()
+                          - datetime.fromisoformat(pcs)).total_seconds()
+            except Exception:
+                pgecen = None
+            if pgecen is not None:
+                if pgecen > SESSIZ_ALARM and not onceki.get("pc_alarm"):
+                    onceki["pc_alarm"] = True
+                    yaz(f"ALARM  PC kategorisi {int(pgecen/60)} dakikadir "
+                        f"veri yollamiyor (otomobil ayri sekmede, "
+                        f"etkilenmemis olabilir)")
+                elif pgecen <= SESSIZ_ALARM and onceki.get("pc_alarm"):
+                    onceki["pc_alarm"] = False
+                    yaz("DUZELDI  PC kategorisi akisi geri geldi")
+            pcy = d.get("pc_yazilan", 0)
+            if pcy > onceki.get("pc_yazilan", -1) and onceki.get("pc_yazilan") is not None:
+                pass        # normal akis, bildirme
+            onceki["pc_yazilan"] = pcy
+
         # ── sayac artislari (sadece artarsa bildir) ──
         for anahtar, etiket in (("kayip", "KAYIP  sayfa tarafi gonderimi "
                                            "basarisiz"),
@@ -159,11 +183,24 @@ def main():
                 f"(toplam {tg['hata']})")
         onceki["tg_hata"] = tg.get("hata", 0)
 
+        # ── BEKCI RAPORU (08.10.2026 16:15 — GURULTU DUZELTMESI) ─────
+        # Uzanti IKI profilde kayitli olabiliyor (biri toplayan temiz
+        # profil, digeri kullanicinin ana profili). Ikisi de dakikada
+        # bir rapor verdigi icin "eylem" degeri surekli
+        # izliyor <-> sekme YOK diye salinir ve her dakika "yeni olay"
+        # sayilirdi. Dogru kural: VERI AKIYORSA bekci sikayeti yanlis
+        # alarmdir — turlar geliyorsa bir sekme zaten var. Sadece
+        # gercek sessizlikte veya gercek mudahalede bildir.
         bk = d.get("bekci") or {}
         eylem = bk.get("eylem", "")
-        if eylem and eylem != "izliyor" and eylem != onceki.get("eylem"):
+        veri_taze = gecen is not None and gecen <= 180
+        onemli = eylem.startswith("sekme yenilendi") or (
+            eylem and eylem != "izliyor" and not veri_taze)
+        if onemli and eylem != onceki.get("eylem_bildirilen"):
             yaz(f"BEKCI  {eylem}")
-        onceki["eylem"] = eylem
+            onceki["eylem_bildirilen"] = eylem
+        elif veri_taze:
+            onceki.pop("eylem_bildirilen", None)
 
         # ── yarim saatlik nabiz (sessizlik belirsiz kalmasin) ──
         if time.time() - son_nabiz > NABIZ_ARASI:

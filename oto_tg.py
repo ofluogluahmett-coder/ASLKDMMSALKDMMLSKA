@@ -42,6 +42,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 TOKEN = (os.getenv("TELEGRAM_TOKEN") or "").strip()
 # 08.10.2026 — COK ALICI: TELEGRAM_CHAT_ID virgulle ayrilmis liste
@@ -179,11 +180,22 @@ def _gonder_tek(mesaj):
     """
     metin = mesaj["metin"]
     foto = mesaj.get("foto") if foto_acik() else None
-    basari = 0
-    for h in HEDEFLER:
-        if _tek_hedefe(h, metin, foto):
-            basari += 1
-    return basari > 0
+    if len(HEDEFLER) <= 1:
+        return bool(HEDEFLER) and _tek_hedefe(HEDEFLER[0], metin, foto)
+    # ── PARALEL GONDERIM (08.10.2026 16:12) ──────────────────────────
+    # OLCUM: bu baglantidan api.telegram.org'a HER istek ~7 sn suruyor
+    # (Turkiye'den Telegram'a tipik). Baglanti yeniden kullanimi FARK
+    # ETMIYOR — ayni uca 3 istek: urllib 21.7 sn, requests.Session
+    # 20.4 sn. Yani darbogaz TLS el sikismasi degil, agin kendisi.
+    # Iki aliciya SIRAYLA gondermek ilan basina ~16 sn demekti
+    # (dakikada 3.75) ve uretim (~4/dk) bunu asinca kuyruk buyudu.
+    # Aliciları PARALEL yollayinca ilan basina sure yariya iner.
+    # NOT: Telegram ozel sohbette ~1 msg/sn siniri koyuyor; biz ayni
+    # ANDA farkli sohbetlere yolluyoruz, ayni sohbete degil.
+    with ThreadPoolExecutor(max_workers=min(4, len(HEDEFLER))) as ic:
+        sonuclar = list(ic.map(
+            lambda h: _tek_hedefe(h, metin, foto), HEDEFLER))
+    return any(sonuclar)
 
 
 def _kanal_kaydi(mesaj, ok):
@@ -338,14 +350,22 @@ def ilanlari_bildir(ilanlar, su_seviyesi=None, ilk_tur=False):
 
     atilan = 0
     tavan = tur_tavani()
-    for ilan in hedef[:tavan]:
-        _kuyruga(ilan_metni(ilan, _id(ilan) > int(su_seviyesi or 0)),
-                 ilan.get("gorsel") or None)
+    secilen = hedef[:tavan]
+    kalan = len(hedef) - len(secilen)
+    # 08.10.2026 16:21 — OZET AYRI MESAJ DEGIL, SON ILANIN ALTINA.
+    # Olcum: mesaj basina ~13.6 sn (iki aliciya paralel gonderimden
+    # sonra) -> kapasite dakikada ~4.4. Tavan 4 + ayri ozet satiri =
+    # uretim ~5/dk, yani kuyruk yine buyuyordu. Ozeti son ilanin
+    # altina katmak tur basina BIR mesaj tasarruf ediyor ve hicbir
+    # bilgi kaybetmiyor.
+    for n, ilan in enumerate(secilen):
+        metin = ilan_metni(ilan, _id(ilan) > int(su_seviyesi or 0))
+        if kalan > 0 and n == len(secilen) - 1:
+            metin += (f"\n<i>… bu turda {kalan} yeni ilan daha girdi</i>")
+        _kuyruga(metin, ilan.get("gorsel") or None)
         atilan += 1
-    kalan = len(hedef) - atilan
-    if kalan > 0:
-        _kuyruga(f"… bu turda <b>{kalan}</b> yeni ilan daha girdi "
-                 f"(kanal dolmasin diye ozetlendi).")
+    if not secilen and kalan > 0:
+        _kuyruga(f"… bu turda <b>{kalan}</b> yeni ilan girdi.")
     return atilan, max(0, kalan), len(doping) if SADECE_YENI else 0
 
 
