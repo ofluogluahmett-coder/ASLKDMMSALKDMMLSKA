@@ -11,8 +11,9 @@
   "aralik_max_sn": 80,
   "_aralik": "Iki tur arasi rastgele bant. Olculen guvenli bant 56-80 sn. Not: arka plandaki sekmede tarayici zamanlayicilari dakikada bire kisiyor, bu yuzden gercek ara 60-120 sn cikabilir; tempoyu servis calisaninin alarmi da destekliyor.",
 
-  "varyant_mod": "ab",
+  "varyant_mod": "cachebust",
   "_varyant_mod": "duz = adres oldugu gibi | cachebust = adrese _=<ms> eklenir | ab = turlar donusumlu (deney). sahibinden jQuery kullaniyor ve '_' jQuery'nin kendi cache:false parametresi, yani sitenin kendi istek bicimi.",
+  "_deney_sonucu": "08.10.2026 A/B SONUCU — cachebust KIRIYOR. Turlar donusumlu kosuldu (piyasa hizi iki varyant icin ayni), tur basina TAZE ilan: cachebust 20.8, duz 0.8 -> 26 KAT. Patlama araligi 5.5 dk'dan 2.0 dk'ya indi. Bu yuzden mod kalici olarak cachebust yapildi. Not: olcut 'icerik degisti mi' DEGIL 'kac TAZE ilan geldi' olmali; ilk olcutle iki varyant da %100 cikiyordu cunku iki onbellek dugumu arasinda salinirken icerik her turda degisiyor.",
 
   "ofsetler": [0],
   "_ofsetler": "Izlenecek sayfa ofsetleri, donusumlu. [0] = sadece birinci sayfa. [0,50] = birinci + ikinci sayfa (100 ilanlik pencere). Sitenin kendi sayfalama linki: /otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc. OLCUM: 50 slotluk birinci sayfa ~1 dakikada tamamen devriliyor, bu yuzden derinlik kaybi onlemek icin onemli.",

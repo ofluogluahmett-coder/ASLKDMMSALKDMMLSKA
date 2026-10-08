@@ -90,7 +90,15 @@ def main():
         onceki["son_challenge"] = sc
 
         # ── veri akisi kesildi mi? ──
-        sg = d.get("son_gorulme")
+        # Bekci freni acikken /durum, uzantidaki ESKI bekci kodunu
+        # susturmak icin "son_gorulme"yi taze gosteriyor. Gercek deger
+        # son_gorulme_gercek'te; olcum bozulmasin diye onu kullan.
+        sg = d.get("son_gorulme_gercek") or d.get("son_gorulme")
+        if d.get("bekci_frenlendi") and not onceki.get("fren_bildirildi"):
+            onceki["fren_bildirildi"] = True
+            yaz("BEKCI FRENI ACIK — sekme yenilemesi kapatildi "
+                "(challenge/PX sirasinda yenileme ise yaramaz, blogu "
+                "derinlestirir). Olcum son_gorulme_gercek'ten okunuyor.")
         gecen = None
         if sg:
             try:
