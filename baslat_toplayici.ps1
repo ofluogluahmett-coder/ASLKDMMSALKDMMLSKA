@@ -31,7 +31,16 @@
 $brave    = "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
 $profil   = "OtoKelepir"
 $anaSayfa = "https://www.sahibinden.com/"
-$kategori = "https://www.sahibinden.com/otomobil?sorting=date_desc&pagingSize=50"
+# 08.10.2026 KULLANICI KARARI: sadece SAHIBINDEN (sahibi satan) ilanlar.
+# "galeri tarafi gereksiz copluk, bize yarayacak hicbir sey yok orada".
+# Bu adres SITENIN KENDI filtre yolu - kaydedilen sayfadan alindi:
+#   /otomobil/sahibinden?pagingSize=50&sorting=date_desc&_=1791482457414
+# (Sitenin kendi linkinde "_=" parametresi de VAR; bugun onbellegi
+#  kirmak icin kullandigimiz parametrenin sitenin kendi istek bicimi
+#  oldugunu bu dogruluyor.)
+# Ek fayda: 50 slotun tamami artik sahibinden ilani, galeriye
+# harcanmiyor -> ayni sayfa boyunda DAHA GENIS kapsama.
+$kategori = "https://www.sahibinden.com/otomobil/sahibinden?sorting=date_desc&pagingSize=50"
 $kok      = "C:\Users\AHMET1\Desktop\oto_kelepir"
 $durumUc  = "http://127.0.0.1:8765/durum"
 

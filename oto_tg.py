@@ -104,6 +104,23 @@ def tur_tavani():
 YENI_BANT = int(os.getenv("OTO_TG_YENI_BANT", "20000"))
 SADECE_YENI = os.getenv("OTO_TG_SADECE_YENI", "1") != "0"
 
+
+def sadece_sahibinden():
+    """ayar.json -> tg_sadece_sahibinden (varsayilan: True).
+
+    08.10.2026 KULLANICI KARARI: "galeri tarafi gereksiz coplук, bize
+    yarayacak hicbir sey yok orada". Asil filtre ADRES duzeyinde
+    (/otomobil/sahibinden - sitenin KENDI filtre yolu), bu ise ikinci
+    emniyet: yine de bir galeri ilani sizarsa kanala dusmesin.
+    """
+    try:
+        from pathlib import Path as _P
+        _a = json.loads((_P(__file__).parent / "ayar.json")
+                        .read_text(encoding="utf-8"))
+        return _a.get("tg_sadece_sahibinden") is not False
+    except Exception:
+        return True
+
 # ── ILK TUR KORUMASI KALDIRILDI (08.10.2026) ───────────────────────────
 # Tarih: once "ilk tur HER ZAMAN sessiz" kuraliydi; sonra esige baglandi
 # (>15 ilan). IKISI DE YANLISTI. Olcum: sunucu gun icinde her yeniden
@@ -331,6 +348,20 @@ def ilanlari_bildir(ilanlar, su_seviyesi=None, ilk_tur=False):
             return int(i.get("ilan_id") or 0)
         except Exception:
             return 0
+
+    # GALERI FILTRESI (08.10.2026 kullanici karari) — kanala sadece
+    # sahibinden (sahibi satan) ilanlar duser. Asil filtre adres
+    # duzeyinde; bu ikinci emniyet.
+    if sadece_sahibinden():
+        _onc = len(ilanlar)
+        ilanlar = [i for i in ilanlar
+                   if (i.get("kimden") or "") != "galeriden"]
+        atlanan_galeri = _onc - len(ilanlar)
+        if atlanan_galeri:
+            _sayac["atlanan_galeri"] = (
+                _sayac.get("atlanan_galeri", 0) + atlanan_galeri)
+        if not ilanlar:
+            return 0, 0, 0
 
     # ID'si buyuk olan daha yeni -> once o gider.
     sirali = sorted(ilanlar, key=_id, reverse=True)

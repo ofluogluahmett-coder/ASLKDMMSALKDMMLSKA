@@ -96,6 +96,43 @@
   // emniyet; ayrica PX'siz olculmus 56-80 sn bandinin altina inilmez.
   const EN_AZ_ARA = 40000;
 
+  // ── TEK TOPLAYICI KILIDI (08.10.2026 21:08) ───────────────────────
+  // SORUN: ayni profilde kac sekme acilirsa o kadar toplayici calisiyor.
+  // Bugun ucu birden veri gonderdi (tur 5 + 16 + 1) ve yuk coklamasi
+  // hem 2FA duvarinin hem hacim tavaninin sebebi oldu. Kullanici
+  // sekmeleri elle kapatmak zorunda kaldi; "bas calistir" istiyor.
+  // COZUM: localStorage uzerinden lider secimi. Ayni profildeki tum
+  // sekmeler ayni anahtari gorur; lider olan toplar, digerleri susar.
+  // Lider 3 dakika isaret vermezse (sekme kapandi/dondu) bayrak baska
+  // bir sekmeye gecer - yani tek sekme kapaninca sistem kendini
+  // toparlar, kimsenin mudahalesi gerekmez.
+  const BENIM_ID = Math.random().toString(36).slice(2) + "-" + Date.now();
+  const LIDER_ANAHTAR = "ok_lider";
+  const LIDER_BAYAT = 180000;        // 3 dk
+
+  function liderMiyim() {
+    try {
+      const simdi = Date.now();
+      let l = null;
+      const ham = localStorage.getItem(LIDER_ANAHTAR);
+      if (ham) {
+        try { l = JSON.parse(ham); } catch (e) { l = null; }
+      }
+      const bos = !l || !l.id;
+      const bayat = l && simdi - (l.zaman || 0) > LIDER_BAYAT;
+      if (bos || bayat || l.id === BENIM_ID) {
+        localStorage.setItem(LIDER_ANAHTAR,
+          JSON.stringify({ id: BENIM_ID, zaman: simdi }));
+        // Yaz-sonra-oku: iki sekme ayni anda talip olduysa kim kazandi?
+        const t = JSON.parse(localStorage.getItem(LIDER_ANAHTAR) || "{}");
+        return t.id === BENIM_ID;
+      }
+      return false;
+    } catch (e) {
+      return true;    // depolama kisitli -> tek sekme varsay, durma
+    }
+  }
+
   const gorulen = new Set();
   let calisiyor = false;
   let sonTurAn = 0;
@@ -265,6 +302,24 @@
       await ayariTazele();
       if (ayar.durdur) {
         log("tur", sayac, "— ayar.durdur=true, atlandi");
+        return;
+      }
+      // ── TEK SEKME KURALI (08.10.2026 21:03) ─────────────────────
+      // OLCUM: eski sekmeler acik kaldigi icin UC toplayici birden
+      // veri gondermeye basladi (tur 5 + tur 16 + tur 1, farkli
+      // adreslerden). Yuk coklamasi bugunun 2FA duvarinin ve hacim
+      // tavaninin sebebiydi. Artik ayar.json'daki "beklenen_yol" ile
+      // uyusmayan sekme KENDILIGINDEN susuyor; kullanicinin eski
+      // sekmeleri tek tek kapatmasi gerekmiyor.
+      if (ayar.beklenen_yol && location.pathname !== ayar.beklenen_yol) {
+        log("tur", sayac, "— bu sekme beklenen yol degil (",
+            location.pathname, "!=", ayar.beklenen_yol,
+            ") susuyorum");
+        return;
+      }
+      // Ayni yolda birden fazla sekme varsa yalnizca LIDER toplar.
+      if (!liderMiyim()) {
+        log("tur", sayac, "— baska sekme lider, susuyorum");
         return;
       }
       const dny = hedefAdres(sayac);
