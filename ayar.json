@@ -18,6 +18,12 @@
   "ofsetler": [0],
   "_ofsetler": "Izlenecek sayfa ofsetleri, donusumlu. [0] = sadece birinci sayfa. [0,50] = birinci + ikinci sayfa (100 ilanlik pencere). Sitenin kendi sayfalama linki: /otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc. OLCUM: 50 slotluk birinci sayfa ~1 dakikada tamamen devriliyor, bu yuzden derinlik kaybi onlemek icin onemli.",
 
+  "tg_foto": true,
+  "_tg_foto": "false yapilirsa ilanlar fotosuz (metin) gider. OLCUM: fotolu gonderim mesaj basina medyan 6 sn / ortalama 11 sn -> kapasite dakikada ~5.5 mesaj; darbogaz Telegram'in gorseli sahibinden'den CEKMESI. Kuyruk sismeye baslarsa bunu kapat: kapasite kat kat artar. Bayat fotolu ilan yerine taze metin tercih edilir.",
+
+  "tg_tur_tavan": 3,
+  "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu — sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim hizi dakikada ~6, uretim ise ~12. Uretim gonderimi gectigi surece ilanlar BAYAT duser ve tazelik kazancimiz cope gider. 3 = dakikada ~3 mesaj, gonderim kapasitesinin altinda. Kalici cozum kelepir skorlamasi (saatte 5-19 ilan).",
+
   "sayfa_boyu": 50,
   "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50."
 }

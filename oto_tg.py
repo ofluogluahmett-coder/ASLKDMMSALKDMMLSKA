@@ -44,10 +44,41 @@ import urllib.parse
 import urllib.request
 
 TOKEN = (os.getenv("TELEGRAM_TOKEN") or "").strip()
+# 08.10.2026 — COK ALICI: TELEGRAM_CHAT_ID virgulle ayrilmis liste
+# olabilir. Sebep: besleme kullanicinin OZEL sohbetine yaziyordu ve ozel
+# sohbet PAYLASILAMAZ, bu yuzden ortak (Adnan) ilanlari goremiyordu.
+# Ortak botu kendisi baslattigi icin ona da dogrudan yazilabiliyor.
+# Grup/kanal kurulursa tek bir negatif id yeterli olur (bkz.
+# arac_tg_kanal.py) — o zaman da ayni kod calisir.
 CHAT = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
-ACIK = (os.getenv("OTO_TG_BESLEME", "1") != "0") and bool(TOKEN and CHAT)
+HEDEFLER = [x.strip() for x in CHAT.split(",") if x.strip()]
+ACIK = (os.getenv("OTO_TG_BESLEME", "1") != "0") and bool(TOKEN and HEDEFLER)
 ARA = float(os.getenv("OTO_TG_ARA", "3.5"))
-TUR_TAVAN = int(os.getenv("OTO_TG_TUR_TAVAN", "12"))
+
+# ── TUR TAVANI ARTIK CANLI (08.10.2026) ──────────────────────────────
+# OLCUM: tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA
+# geriye dustu. Sebep: tur basina 12 mesaj (dakikada ~12) uretiliyor ama
+# gercek gonderim hizi dakikada ~6 — cunku sendPhoto fotoyu Telegram'a
+# CEKTIRIYOR ve bu saniyeler aliyor. Uretim > gonderim oldugu surece
+# kuyruk sinirsiz buyur, ilanlar BAYAT duser ve tum tazelik kazancimiz
+# cope gider.
+# Bu yuzden tavan artik ayar.json'dan CANLI okunuyor: kuyruk sismeye
+# baslarsa yeniden baslatmadan kisilabiliyor.
+_TAVAN_ENV = int(os.getenv("OTO_TG_TUR_TAVAN", "3"))
+
+
+def tur_tavani():
+    """ayar.json -> tg_tur_tavan (yoksa .env, yoksa 3)."""
+    try:
+        from pathlib import Path as _P
+        _a = json.loads((_P(__file__).parent / "ayar.json")
+                        .read_text(encoding="utf-8"))
+        v = int(_a.get("tg_tur_tavan") or 0)
+        if v > 0:
+            return v
+    except Exception:
+        pass
+    return _TAVAN_ENV
 
 # ── DOPING FILTRESI (08.10.2026 — OLCUMLE BULUNDU) ───────────────────
 # Bir turda DB'ye 50 ilan "ilk kez gorulmus" olarak girdi; incelendiginde
@@ -104,13 +135,11 @@ def _istek(uc, alan):
         return json.loads(c.read().decode("utf-8"))
 
 
-def _gonder_tek(mesaj):
-    """Doner: True/False. Foto reddedilirse metne duser."""
-    metin, foto = mesaj["metin"], mesaj.get("foto")
+def _tek_hedefe(hedef, metin, foto):
     if foto:
         try:
             c = _istek("sendPhoto", {
-                "chat_id": CHAT, "photo": foto, "caption": metin,
+                "chat_id": hedef, "photo": foto, "caption": metin,
                 "parse_mode": "HTML"})
             if c.get("ok"):
                 return True
@@ -118,12 +147,43 @@ def _gonder_tek(mesaj):
             pass        # foto tutmadi -> metin denenir
     try:
         c = _istek("sendMessage", {
-            "chat_id": CHAT, "text": metin, "parse_mode": "HTML",
+            "chat_id": hedef, "text": metin, "parse_mode": "HTML",
             "disable_web_page_preview": "true"})
         return bool(c.get("ok"))
     except Exception as e:
-        print(f"  [tg] gonderilemedi: {str(e)[:100]}")
+        print(f"  [tg] {hedef} gonderilemedi: {str(e)[:90]}")
         return False
+
+
+def foto_acik():
+    """ayar.json -> tg_foto. OLCUM (08.10.2026): fotolu gonderim mesaj
+    basina medyan 6 sn / ortalama 11 sn suruyor -> kapasite dakikada
+    ~5.5 mesaj. Sebep sendPhoto'nun gorseli Telegram'a CEKTIRMESI.
+    Metin-only gonderim bunun kat kat ustunde. Kuyruk sismeye baslarsa
+    bu anahtar kapatilip kapasite buyutulur (ilan gorseli kaybolur ama
+    ilanlar TAZE duser — bayat fotolu ilandan iyidir)."""
+    try:
+        from pathlib import Path as _P
+        _a = json.loads((_P(__file__).parent / "ayar.json")
+                        .read_text(encoding="utf-8"))
+        return _a.get("tg_foto") is not False
+    except Exception:
+        return True
+
+
+def _gonder_tek(mesaj):
+    """Tum hedeflere yollar. Doner: en az biri gittiyse True.
+
+    Bir hedef hata verirse (ornegin ortak botu engellediyse) digerleri
+    ETKILENMEZ — besleme tek bir alicinin sorunu yuzunden durmaz.
+    """
+    metin = mesaj["metin"]
+    foto = mesaj.get("foto") if foto_acik() else None
+    basari = 0
+    for h in HEDEFLER:
+        if _tek_hedefe(h, metin, foto):
+            basari += 1
+    return basari > 0
 
 
 def _kanal_kaydi(mesaj, ok):
@@ -277,7 +337,8 @@ def ilanlari_bildir(ilanlar, su_seviyesi=None, ilk_tur=False):
         _sayac["atlanan_doping"] += len(doping)
 
     atilan = 0
-    for ilan in hedef[:TUR_TAVAN]:
+    tavan = tur_tavani()
+    for ilan in hedef[:tavan]:
         _kuyruga(ilan_metni(ilan, _id(ilan) > int(su_seviyesi or 0)),
                  ilan.get("gorsel") or None)
         atilan += 1
@@ -306,6 +367,7 @@ if __name__ == "__main__":
     # env yeniden okundu; modul sabitleri import aninda alinmisti
     TOKEN = (os.getenv("TELEGRAM_TOKEN") or "").strip()
     CHAT = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
+    HEDEFLER = [x.strip() for x in CHAT.split(",") if x.strip()]
     API = "https://api.telegram.org/bot" + TOKEN + "/"
     ACIK = bool(TOKEN and CHAT)
     _isci_basladi = True        # isciyi baslatma, senkron gonder
