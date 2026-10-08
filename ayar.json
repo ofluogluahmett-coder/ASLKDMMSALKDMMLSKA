@@ -23,5 +23,13 @@
   "tg_sadece_sahibinden": true,
   "_tg_sadece_sahibinden": "true = kanala SADECE sahibinden (sahibi satan) ilanlar duser. Kullanici karari: \"galeri tarafi gereksiz coplук\". Asil filtre ADRES duzeyinde: /otomobil/sahibinden (sitenin KENDI filtre yolu, kaydedilen sayfadan alindi). Bu ayar ikinci emniyet.",
   "beklenen_yol": "/otomobil/sahibinden",
-  "_beklenen_yol": "TEK SEKME KURALI: sadece bu yoldaki sekme toplar, digerleri kendiliginden susar. Sebep (08.10.2026 21:03 olcumu): eski sekmeler acik kaldigi icin UC toplayici birden veri gonderdi; yuk coklamasi bugunun 2FA duvarinin ve hacim tavaninin sebebiydi. Bos birakilirsa kural devre disi."
+  "_beklenen_yol": "TEK SEKME KURALI: sadece bu yoldaki sekme toplar, digerleri kendiliginden susar. Sebep (08.10.2026 21:03 olcumu): eski sekmeler acik kaldigi icin UC toplayici birden veri gonderdi; yuk coklamasi bugunun 2FA duvarinin ve hacim tavaninin sebebiydi. Bos birakilirsa kural devre disi.",
+  "avci_aralik_sn": 180,
+  "avci_seviyeler": [
+    "VURGUN",
+    "FIRSAT"
+  ],
+  "avci_sadece_sahibinden": true,
+  "avci_tur_tavan": 5,
+  "_avci": "oto_avci.py ayarlari. seviyeler: IZLE kasten DISARIDA — o seviyede guven dusuk (R2 0.21-0.30, emsal az), istatistik gurultusu kanala dusmesin. avci_sadece_sahibinden: galeri fiyatlari bayi kari tasidigi icin referansi yukari cekiyor ve siradan ilanlari kelepir gibi gosteriyordu. avci_tur_tavan: bir turda en fazla kac bildirim; kalanlar sonraki turda gider (gorulmus SAYILMAZ)."
 }

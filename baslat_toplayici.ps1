@@ -74,6 +74,27 @@ try {
     Write-Host "      [!] sunucu cevap vermiyor - devam ediliyor" -ForegroundColor Yellow
 }
 
+# --------------------------------------------------- 1b) OTO AVCISI
+# Kelepir bildirimcisi: kelepir.py skorlamasini calistirip piyasa alti
+# ilanlari Telegram'a dusurur. Ham akistan AYRI bir is oldugu icin ayri
+# surec; betige 08.10.2026 21:17'de eklendi (kullanici "bas calistir
+# olsun" dedi, o zamana kadar elle baslatiliyordu).
+Write-Host "  1b  kelepir avcisi (oto_avci.py) kontrol ediliyor..."
+$avci = Get-CimInstance Win32_Process |
+        Where-Object { $_.CommandLine -match 'oto_avci\.py' }
+if ($avci) {
+    Write-Host "      zaten calisiyor (PID $($avci[0].ProcessId))"
+} else {
+    $pa = Start-Process -FilePath "py" `
+          -ArgumentList "-3.12","-u","oto_avci.py" `
+          -WorkingDirectory $kok `
+          -RedirectStandardOutput "$kok\avci.log" `
+          -RedirectStandardError "$kok\avci.err.log" `
+          -PassThru -WindowStyle Hidden
+    Start-Sleep -Seconds 3
+    Write-Host "      baslatildi (PID $($pa.Id))"
+}
+
 # ---------------------------------------------------------------- 2/4
 Write-Host "  2/4 ana sayfa aciliyor (isinma)..."
 Start-Process -FilePath $brave -ArgumentList "--profile-directory=$profil", $anaSayfa
