@@ -24,7 +24,12 @@ from datetime import datetime
 DURUM = "http://127.0.0.1:8765/durum"
 ARALIK = 30            # sn — yerel okuma, ucuz
 SESSIZ_ALARM = 360     # sn — tur araligi en fazla 150 sn; 6 dk kesinlikle ariza
-NABIZ_ARASI = 1800     # sn — yarim saatlik ozet
+# 08.10.2026 — 1800 idi (tam yarim saat) ve gozetim penceresi de yarim
+# saat oldugu icin nabiz pencerenin DISINA dusebiliyordu: hic olay
+# gelmemesi "her sey yolunda" mi "izleyici kacirdi" mi belirsiz
+# kaliyordu. 1200'e cekildi; her pencerede en az bir nabiz dusuyor,
+# yani SESSIZLIK artik gercekten sessizlik demek.
+NABIZ_ARASI = 1200     # sn (20 dk)
 
 # ── YENI ILAN KURAKLIGI ALARMI (08.10.2026 olcumu) ───────────────────
 # Iki bagimsiz yontemle olculdu: bu kategoriye is saatlerinde dakikada
