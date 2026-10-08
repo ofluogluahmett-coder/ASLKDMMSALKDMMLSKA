@@ -69,8 +69,13 @@ def _baglan():
     return con
 
 
-def html_isle(html):
+def html_isle(html, yeni_liste=None):
     """Liste sayfasi HTML'ini zengin semaya yaz.
+
+    yeni_liste : verilirse, ILK KEZ gorulen (INSERT edilen) ilanlarin
+                 ayristirilmis sozlukleri buraya eklenir. Telegram
+                 beslemesi bunu kullanir — ayni HTML'i iki kez
+                 ayristirmamak icin.
 
     Doner: (eklendi, guncellendi). Hata halinde (0, 0)."""
     ob = _bot()
@@ -102,6 +107,8 @@ def html_isle(html):
                     guncellendi += 1
                 else:
                     eklendi += 1
+                    if yeni_liste is not None:
+                        yeni_liste.append(ilan)
             except Exception:
                 continue
         con.commit()

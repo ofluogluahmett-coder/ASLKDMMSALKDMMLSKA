@@ -1,7 +1,112 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 08.10.2026 — tarama tarayıcının İÇİNE taşındı (uzantı); PX'siz ilk gözetimsiz koşu.
+**Son güncelleme:** 08.10.2026 — "bayat liste" bilmecesi ÇÖZÜLDÜ: sorun kayıp değil, 5-6 dakikalık sunucu önbelleği.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 08.10.2026 (öğlen) — 🎯 "BAYAT LİSTE" BİLMECESİ ÇÖZÜLDÜ
+
+**Aylardır aradığımız cevap bu. Sorun ilan KAÇIRMAK değil, GECİKME.**
+Ve sebep bot/otomasyon DEĞİL — kullanıcının kendi tarayıcısında,
+hiçbir otomasyon olmadan, aynı davranış ölçüldü.
+
+### Ölçülen gerçek
+
+sahibinden bize **dondurulmuş bir liste anlık görüntüsü** veriyor ve bu
+görüntü **~5-6 dakikada bir** toptan tazeleniyor. Aralarda ne kadar sık
+istek atarsak atalım aynı kopyayı okuyoruz.
+
+İçerik parmak izi kanıtı (her turda kart ID'lerinin sıralı hash'i):
+```
+11:24:19  50 kart  f052056503  yeni=50   <- yeni görüntü
+11:26:19  50 kart  f052056503  yeni= 0   <- AYNI hash
+11:29:00  50 kart  f052056503  yeni= 0   <- AYNI hash
+11:31:05  50 kart  e2b1b05c7b  yeni= 0
+11:33:29  50 kart  e2b1b05c7b  yeni= 0
+11:34:24  50 kart  e2b1b05c7b  yeni= 0
+11:35:18  50 kart  b87bcc4748  yeni=50   <- yeni görüntü
+```
+Tazelenme anları: 10:34:01, 10:39:44, 10:45:51, 10:51:47, 10:56:48,
+11:08:17, 11:30:00, 11:40:58 → aralar 5:00 / 5:35 / 5:39 / 5:43 / 5:56.
+
+### Döngüsel olmayan kanıt: ilanlar ÖBEKLE geliyor
+
+Cephe hattındaki (en üst 20.000 ID) 358 ilanın **268'i 9 patlama
+turundan** geldi (her birinde 25-35 ilan). **1-5 ilanlık cephe turu
+HİÇ YOK** — dağılım çift tepeli. Aradaki `yeni=1` turlarının getirdiği
+ilanlar cephe bandının dışında, yani doping ile yukarı itilmiş eskiler.
+
+Aritmetik: patlama başına ~30 ilan ÷ 5,5 dakika = **dakikada 5,5 ilan**,
+bu da bağımsız ölçülen arz hızıyla (dakikada ~4-5) birebir örtüşüyor.
+→ İlan KAYBI yok (ID dizisinde delik yok), **0-6 dakika GECİKME var**
+(ortalama ~3 dk).
+
+### Yeni ilan arz hızı (iki bağımsız yöntem)
+
+| Yöntem | Sonuç |
+|---|---|
+| Kaydedilen taze ilanlar, 10 dk kovaları | dakikada 1,7-8,3 (ort. ~4,5) |
+| ID hızı: global ~230 ID/dk ÷ otomobil medyan ID farkı 41 | dakikada ~5 |
+| Patlama hacmi: ~30 ilan ÷ 5,5 dk | dakikada ~5,5 |
+
+**Normal: her 10-15 saniyede bir yeni ilan.** Tur başına 4-8 beklenir.
+4-6 dakikalık kuraklık NORMAL (önbellek penceresi); 9 dakika ARIZA.
+
+### Elenen açıklamalar (hepsi ölçümle)
+
+- **Tempo DEĞİL** — 55 sn'de bir istek atılıyor, önbellek 5,5 dk'da bir
+  açılıyor. Daha sık istek atmak hiçbir şey kazandırmaz, sadece risk.
+- **Sekme yenilemesi DEĞİL** — bekçinin hatalı yenilemeleri 11:03'te
+  durdu, sıçramalar aynı ritimde devam etti.
+- **Kullanıcının F5'i DEĞİL** — anında tazelemedi.
+- **Sıralama bozuk DEĞİL** — `date_desc` ilanın *tarih* alanına göre
+  sıralıyor, doping o tarihi sıfırlıyor. Bu yüzden listede 1,30 ve 1,32
+  milyarlık eski ID'ler güncellerin arasına serpiştirilmiş görünüyor.
+  Kullanıcının "sıra karışık, reklam olduğu bile gözükmüyor" gözlemi
+  tam olarak budur ve NORMALDİR.
+- **Sayfa boyu dar DEĞİL** (ikincil) — 50 slotluk birinci sayfa ~1
+  dakikada tamamen devriliyor (tur 45→46: 55 sn'de 51 kartın 51'i
+  değişti), ama önbellek penceresi yüzünden bunu göremiyoruz.
+
+### Sıradaki iki deney (sıralama KASITLI — ikisini birden yaparsak
+hangisinin işe yaradığı ayırt edilemez)
+
+1. **Önbellek kırma** (kod hazır, kullanıcının uzantı yenilemesini
+   bekliyor): turlar dönüşümlü olarak düz adres ve `_=<ms>` ile çekilir.
+   `_` jQuery'nin kendi `cache:false` yolu ve sahibinden jQuery
+   kullanıyor — uydurma başlık/token DEĞİL. Sunucu hangi varyantın
+   tazelediğini yazar: `DEGISTIREN VARYANT: cachebust|duz`.
+2. **Adres çeşitlendirme** (1 tutmazsa): önbellek adres başına
+   tutuluyorsa, sitenin kendi filtre adreslerinden 4-5 tanesi
+   dönüşümlü izlenir. Pencereleri aynı anda açılmayacağı için birleşik
+   gecikme ~1 dakikaya iner.
+
+### Bu oturumda eklenen ölçüm altyapısı
+
+| Dosya | Görev |
+|---|---|
+| `sunucu.py: sayfa_parmak_izi()` | Her turun kart ID dizisinin hash'i → bayatlık tespiti (`[BAYAT?]` / `[TAZELENDI]`) |
+| `tur_gunlugu.csv` | Kalıcı tur kaydı: hash, kaç turdur aynı, varyant, tetik, ilk/son ID, adres, sekme durumu, yol |
+| `tg_gunlugu.csv` | Kanala NE gittiğinin kaydı (kendi mesajlarımızı API'den geri okuyamıyoruz) |
+| `izleyici.py` | Gün boyu gözetim: kuraklık (9 dk), akış kesintisi (6 dk), kayıp gönderim, TG hatası, bekçi müdahalesi + yarım saatlik nabız |
+| `_sayfa_<adet>.html` | İki cevap varyantının ham kopyası (ekstra istek YOK) |
+
+### Bu oturumda düzeltilen KENDİ hatalarım
+
+1. **Telegram susturucusu** — "ilk tur sessiz" kuralı sunucunun her
+   yeniden başlatılmasında o turu yutuyordu; bir keresinde 50 gerçek
+   yeni ilan sessizce gitti. Kaldırıldı; sel zaten bant filtresi +
+   tur tavanı (12) ile engelleniyor.
+2. **Bekçi yanlış yenileme** — veri yolu doğrudan POST'a taşınınca
+   service worker mesaj görmüyordu, bekçi sessizlik sanıp sekmeyi her
+   5 dakikada bir yeniliyordu. Artık kararı SUNUCUYA soruyor.
+3. **Doping filtresiz besleme** — bir turda 50 "yeni" kaydın sadece 9'u
+   gerçekten yeniydi. ID su seviyesi + 20.000 bant eklendi (20-100 bin
+   bandı ölçümde TAMAMEN BOŞ çıktı → sınır güvenli).
+4. **Altı kez sunucu yeniden başlatma** — her biri bir tur yuttu, biri
+   de Telegram kuyruğundaki 25 mesajı uçurdu (geri gönderildi). Artık
+   yeniden başlatmadan önce kuyruğun boşalması bekleniyor.
 
 ---
 
