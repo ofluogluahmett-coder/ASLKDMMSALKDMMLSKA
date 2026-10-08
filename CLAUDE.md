@@ -7,33 +7,43 @@
 
 ## 08.10.2026 (13:00) — 🔓 ÖNBELLEK KIRILDI + KAYIP DÜZELTMESİ
 
-### A/B sonucu:  önbelleği kırıyor (17-26 KAT)
+### A/B sonucu: `_=<ms>` önbelleği kırıyor (17-26 KAT)
 
 Turlar DÖNÜŞÜMLÜ koşuldu, yani piyasa hızı iki varyant için aynıydı:
 
 | Varyant | Tur | yeni/tur | doping/tur | **TAZE/tur** |
 |---|---|---|---|---|
-|  | 15 | 26,1 | 13,5 | **12,7** |
-|  | 4 | 1,8 | 1,0 | **0,8** |
+| `cachebust` | 15 | 26,1 | 13,5 | **12,7** |
+| `duz` | 4 | 1,8 | 1,0 | **0,8** |
 
-Tazelenme aralığı **5,5 dk → 1,8 dk**.  →  kalıcı yapıldı (tıklama/restart gerekmedi, canlı ayar).
+Tazelenme aralığı **5,5 dk → 1,8 dk**. `ayar.json` →
+`varyant_mod: "cachebust"` kalıcı yapıldı — tıklama ve yeniden
+başlatma GEREKMEDİ (canlı ayar mekanizması sayesinde).
 
- parametresi jQuery'nin kendi  yolu ve sahibinden jQuery
-kullanıyor → sitenin kendi istek biçimi, uydurma başlık/token DEĞİL.
+`_` parametresi jQuery'nin kendi `cache:false` yolu ve
+sahibinden jQuery kullanıyor → sitenin kendi istek biçimi, uydurma
+başlık/token DEĞİL.
 
 **ÖLÇÜT UYARISI:** ilk raporum "içerik değişti mi" diye sorup iki
 varyantı da %100 bulmuştu — YANLIŞ ölçüt. İki önbellek düğümü arasında
 salındığımız için içerik her turda değişiyor ama değişen içerik taze
 olmak zorunda değil. Doğru ölçüt: **TAZE = yeni − doping**.
+`arac_deney_rapor.py` buna göre düzeltildi.
 
 ### ⚠️ DÜZELTME: ilan KAYBI VARMIŞ (sabahki "kayıp yok" yanlıştı)
 
 Temiz kapsama ile ölçülen gerçek arz hızı: **dakikada ~11,7 taze ilan**
-(kuyruk boşaldıktan sonra ~9-10) = **her 5-6 saniyede bir ilan**.
-Sabahki tahminim dakikada ~5'ti, 2 kat DÜŞÜKTÜ (ID-aralığı yöntemi seyrek
-örnek üzerinde hesaplanmıştı).
+(birikmiş kuyruk boşaldıktan sonra ~9-10) = **her 5-6 saniyede bir
+ilan**. Sabahki tahminim dakikada ~5'ti, **2 kat DÜŞÜKTÜ** (ID-aralığı
+yöntemi seyrek örnek üzerinde hesaplanmıştı).
 
 Mekanik açıklama — neden kaybediyormuşuz:
+
+```
+önbellek penceresi 5,5 dk × dakikada ~10 ilan = ~55 ilan
+birinci sayfa kapasitesi                      =  50 slot
+                                              -> TASMA -> kalici kayip
+```
 
 Ölçüm doğruluyor: önbellekli halde dakikada ~5,5 taze yakalıyorduk,
 cachebust ile ~9-10. **İlanların ~%40'ını kaybediyormuşuz.**
@@ -44,11 +54,11 @@ taşma yok. Yani tek düzeltme İKİ sorunu birden çözdü:
 
 ### İzlenecek risk
 
-Cachebust her isteğin önbelleği atlayıp origin'e gitmesi demek; PX'in
+Cachebust, her isteğin önbelleği atlayıp origin'e gitmesi demek; PX'in
 gözüne daha çok görünebiliriz. İlk 18 dakikada challenge YOK. Birkaç saat
 PX'siz koşu görülmeden "çözüldü" sayılmamalı. PX gelirse yedek plan:
- →  (adres çeşitlendirme, sitenin kendi
-sayfalama adresi).
+`ayar.json` → `ofsetler: [0, 50]` (adres çeşitlendirme,
+sitenin kendi sayfalama adresi).
 
 ### Sıradaki darboğaz: kanal hacmi
 
