@@ -1,7 +1,84 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 06.10.2026 — PX kuralları ölçüldü, kapsama kaybı kapatıldı, kelepir köprüsü kuruldu.
+**Son güncelleme:** 08.10.2026 — tarama tarayıcının İÇİNE taşındı (uzantı); PX'siz ilk gözetimsiz koşu.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 07-08.10.2026 — UZANTI MİMARİSİ: TARAMA TARAYICININ İÇİNE TAŞINDI
+
+### Neden: elenenler bitti, tek fark kaldı
+Ölçümle elenen tüm sebepler: IP (aynı IP'den elle gezinme serbest), çerezler
+(34 çerez, `_px3`/`_pxvid`/`pxcts`/`cf_clearance` hepsi var), parmak izi
+(`webdriver=false`, `cdc_` yok, plugins dolu), tempo (50-75 / 77-86 / 180-240
+hepsi denendi), sayfa boyu, cache. Geriye **tek fark**: tarayıcının DIŞARIDAN
+SÜRÜLMESİ (WebDriver + CDP + geçici profil).
+
+Ek ölçüm: otomasyon içinden atılan **ham fetch** bloklandı, oysa kullanıcının
+kendi oturumu AYNI adrese 13 kez XHR attı ve hiç bloklanmadı. Muhtemel sebep:
+sayfadaki PX SDK'sı `XMLHttpRequest`'i sarıyor, ham fetch o sarmalayıcıyı
+atlıyor.
+
+### Mimari
+```
+Kullanıcının Brave'i (KENDİ profili, ELLE açılmış)
+  └─ uzanti/content.js    sayfanın KENDİ XMLHttpRequest yolu, 45-90 sn
+       └─ uzanti/background.js   POST 127.0.0.1:8765  (+ BEKÇİ)
+            └─ sunucu.py   oto_tarama.db  +  oto_kopru → oto_hafiza.db
+```
+WebDriver yok, CDP yok, `--remote-debugging-port` yok, geçici profil yok,
+otomasyon bayrağı yok — tarayıcı GERÇEKTEN normal bir tarayıcı. Hiçbir
+doğrulama başlığı ELLE ÜRETİLMİYOR, token taklit edilmiyor, challenge
+çözülmüyor; sadece sayfanın normal XHR yolundan geçilir.
+
+### Sonuç (ölçüm)
+İlk koşu: `istek 13 | ilan 305 | YENİ 75` — **PX YOK**, hem de aynı IP'de ve
+aynı dakikalarda otomatik bot ilk isteğinde bloklanıyorken.
+08.10 sabahı gözetimsiz koşu: turlar 63 / 78 / 73 sn arayla, sayfa turu
+sayacı 1→2→3→4 (hiç yeniden yükleme yok), biri **sekme arkadayken**.
+
+### Bu oturumda düzeltilen 3 körlük
+1. **Nabız yoktu.** POST sadece yeni ilan varken atılıyordu; boş turlar
+   görünmüyor, "çalışıyor ama yeni ilan yok" ile "durmuş" ayırt edilemiyordu.
+   Artık her tur özet gider (`ozet: {tur, sayfada, yeni, gizli}`).
+2. **Gizli sekmede tur atlanıyordu.** "İnsan gibi olsun" diye koyduğum kural,
+   kullanıcı başka sekmeye geçtiği an sistemi susturuyordu (ölçüm: 3 dakikada
+   tek tur). Kaldırıldı — sekme arkada da taranır, sadece daha seyrek
+   (90-150 sn). Tarayıcı arka plan timer'larını dakikada bire kısıyor, biz
+   onun üstünde kalıyoruz. Tur sayacı `sessionStorage` ile yenilemeyi atlatır.
+3. **Sekme donması.** Tarayıcı bellek tasarrufu için arka plandaki sekmeyi
+   discard ediyor; sekme açık görünür ama içindeki toplayıcı ÖLÜR (kanıt: tur
+   sayacı iki kez 1'den başladı). `background.js` içine **BEKÇİ** eklendi:
+   `chrome.alarms` ile dakikada bir kontrol, 5 dk veri yoksa sekmeyi bir kez
+   yeniler (`YENILEME_ARASI=300` ile ping-pong freni), her turda panele rapor
+   verir. Ek olarak kullanıcı `brave://settings/performance`'ta sahibinden'i
+   "etkin tutulacak siteler"e ekler.
+
+### Kelepir köprüsü bağlandı
+Uzantı artık **ham liste HTML'ini** de yolluyor; `sunucu.py` onu
+`oto_kopru.html_isle()` ile otobotun KANITLANMIŞ ayrıştırıcısından geçirip
+`oto_hafiza.db` zengin şemasına yazıyor (marka/seri/model, motor
+hacmi/tipi/paket, il/ilçe, çöp tespiti, fiyat düşüşü geçmişi). Böylece
+`kelepir.py` skorlaması uzantının topladığı ilanlardan besleniyor.
+Bu, kendi yazdığım JS ayrıştırmasındaki iki veri hatasını da kapattı:
+il+ilçe birleşiyordu (`<br>` textContent'te satır sonu üretmiyor) ve bir
+Cruze ilanına marka `BMW/1 Serisi` yazılmıştı. Ağır iş artık Python
+tarafında; JS sadece ID izini tutuyor. Teşhis için her turun ham HTML'i
+`_canli_sayfa.html`'e düşer (gitignored, sahibinden'e ekstra istek YOK).
+
+### Panel — takip yüzeyi
+`http://127.0.0.1:8765/` (10 sn'de bir kendini yeniler):
+- **nabız şeridi**: CANLI / SESSIZ / BEKÇİ SUSTU → "yeni ilan yok" ile
+  "durmuş" ve "Brave kapalı" birbirinden ayrılır
+- **son turlar**: saat, sayfa turu, sekme (önde/arkada), sayfada, yeni,
+  güncel, zengin yeni
+- **son görülen ilanlar**: araç, fiyat, şehir, ilan linki
+- `/durum` ham sayaç (JSON), `/nabiz` bekçinin POST ucu
+
+### Mimarinin dürüst sınırı
+**Brave açık kalmak zorunda.** Pencere küçültülebilir, ekran kilitlenebilir,
+başka sekmelerde çalışılabilir; ama Brave kapanırsa veya bilgisayar uyursa
+toplama durur. PX'e görünmezliğin bedeli bu — tarayıcıyı biz sürmüyoruz.
 
 ---
 
