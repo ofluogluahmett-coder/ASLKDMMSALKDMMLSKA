@@ -1,6 +1,6 @@
 {
   "_aciklama": "Uzantinin CANLI ayarlari. content.js her turda /ayar'dan okur, yani burayi degistirmek icin uzantiyi yeniden yuklemek GEREKMEZ. Bir gun icinde alti kez 'uzantiyi yenile' demek zorunda kaldiktan sonra eklendi (08.10.2026).",
-  "bekci_yenileme": true,
+  "bekci_yenileme": false,
   "_bekci_yenileme": "false yapilirsa bekci sekmeyi ASLA yenilemez. 08.10.2026'da bekcinin hatali bir yenilemesi PX blogu uretti; bu anahtar gerektiginde kullaniciya hic dokundurmadan susturmak icin var. Bekci ayrica artik sadece SUNUCU sessizlik dogrularsa ve saatte en fazla bir kez yeniliyor.",
   "durdur": true,
   "_durdur": "true yapilirsa toplayici tur atmayi birakir (tarayiciya dokunmadan durdurma).",
@@ -22,5 +22,6 @@
   "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu â€” sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim | 15:30 GUNCELLEME: tavan 3 iken kuyruk 7 mesajda takildi (uretim ~4/dk, kapasite ~5.5/dk, ozet satiri da sayiliyor). 2 yapildi: uretim ~3/dk, pay acildi.",
   "sayfa_boyu": 50,
   "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50.",
-  "_durdur_sebep": "18:08 — temiz profilin oturumu PX yedi (Access to this page has been denied). SEBEP: sekme kapanmisti, ben kategori adresini DOGRUDAN actim = SOGUK GIRIS. Projenin 05.10 bulgusu zaten bunu soyluyordu: soguk giris PX in kok nedeni, cozum isinma (ana sayfa -> bekle -> kategori). Kendi notumu uygulamadim. Toplayici durduruldu; bloklu oturuma istek atmak blogu derinlestirir."
+  "_durdur_sebep": "18:08 — temiz profilin oturumu PX yedi (Access to this page has been denied). SEBEP: sekme kapanmisti, ben kategori adresini DOGRUDAN actim = SOGUK GIRIS. Projenin 05.10 bulgusu zaten bunu soyluyordu: soguk giris PX in kok nedeni, cozum isinma (ana sayfa -> bekle -> kategori). Kendi notumu uygulamadim. Toplayici durduruldu; bloklu oturuma istek atmak blogu derinlestirir.",
+  "_bekci_kapali_sebep": "18:11 — oturum PX bloklu. Bekci 648 sn sessizlikten sonra sayfayi yeniledi; bloklu sayfada yenileme ISE YARAMAZ ve blogu derinlestirir. Blok gecene kadar kapali. Not: bekcinin mantigi dogru calisti (sunucu onayli sessizlik + 10 dk esik + saatte bir), eksik olan sey BLOK DURUMUNU bilmesiydi."
 }
