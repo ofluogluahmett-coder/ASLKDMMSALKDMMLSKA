@@ -16,6 +16,23 @@
 $BOT_IZI = 'Temp\\|scoped_dir|--test-type|remote-debugging-port'
 $tum = Get-CimInstance Win32_Process
 
+# ⚠ 08.10.2026 — PC BILESENI BOTU KORUMASI.
+# apex_predator'un PC botu da undetected_chromedriver kullaniyor ve
+# anonim modda gecici profille calisiyor, yani yukaridaki "bot izi"
+# desenine GIRIYOR. Ikisi birden kosarken bu betik onun tarayicisini
+# yetim sanip oldururdu. Bu yuzden PC botu calisiyorken temizlik
+# yapilmiyor: hangi yetimin kime ait oldugu guvenle ayirt edilemez.
+$pcBot = $tum | Where-Object {
+    ($_.Name -eq 'python.exe' -or $_.Name -eq 'py.exe') -and
+    $_.CommandLine -match 'sahibinden_bot|letgo_bot|kelepir_avci|analiz_botu'
+}
+if ($pcBot) {
+    $n = ($pcBot | Measure-Object).Count
+    Write-Host "PC bileseni botu CALISIYOR ($n surec) - temizlik ATLANDI." -ForegroundColor Yellow
+    Write-Host "Yetim surec birikmisse PC botunu durdurup tekrar calistir."
+    exit 0
+}
+
 $canli = ($tum | Where-Object {
     ($_.Name -eq 'python.exe' -or $_.Name -eq 'py.exe') -and
     $_.CommandLine -match 'oto_tarama|oto_bot'

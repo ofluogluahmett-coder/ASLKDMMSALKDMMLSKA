@@ -41,6 +41,10 @@
   const SUNUCU = "http://127.0.0.1:8765/ilan";
   const AYAR_UC = "http://127.0.0.1:8765/ayar";
 
+  // Hangi kategorideyiz? Sunucu yonlendirmeyi buna gore yapiyor.
+  const KATEGORI = location.pathname.indexOf("masaustu-donanim") >= 0
+    ? "pc" : "otomobil";
+
   // ── CANLI AYAR (08.10.2026) ────────────────────────────────────────
   // Her turda yerel sunucudan okunur. Sebep: bir gun icinde tempo,
   // deney varyanti ve filtre degisiklikleri icin kullaniciya ALTI KEZ
@@ -52,9 +56,27 @@
     varyant_mod: "ab", ofsetler: [0], sayfa_boyu: 50
   };
 
+  // ── ZAMAN ASIMLI FETCH (08.10.2026 — KILITLENME DUZELTMESI) ───────
+  // OLCUM: toplayici 14:59'da sessizce durdu. Sekme acikti, sayfa
+  // saglamdi (challenge yok), bekci sunucudan 427 sn sessizlik
+  // olcuyordu. Sebep: fetch cagrilarina zaman asimi koymamistim. Bir
+  // istek ASILI kalirsa await hic donmez, finally CALISMAZ ve
+  // "calisiyor" bayragi sonsuza kadar true kalir -> sonraki her tur
+  // aninda geri doner -> toplayici KALICI olarak durur.
+  // XHR'in 20 sn'lik timeout'u vardi ama fetch'ler atlanmisti.
+  async function fetchZamanli(url, secenek, msn) {
+    const kesici = new AbortController();
+    const zamanlayici = setTimeout(() => kesici.abort(), msn);
+    try {
+      return await fetch(url, { ...(secenek || {}), signal: kesici.signal });
+    } finally {
+      clearTimeout(zamanlayici);
+    }
+  }
+
   async function ayariTazele() {
     try {
-      const r = await fetch(AYAR_UC, { cache: "no-store" });
+      const r = await fetchZamanli(AYAR_UC, { cache: "no-store" }, 5000);
       if (!r.ok) return;
       const y = await r.json();
       if (y && typeof y === "object") {
@@ -202,14 +224,14 @@
     //    Access basliklarini veriyor, bu yuzden https sayfasindan
     //    127.0.0.1'e POST edilebiliyor. Service worker aradan cikar.
     try {
-      const r = await fetch(SUNUCU, {
+      const r = await fetchZamanli(SUNUCU, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kaynak: "uzanti-dogrudan",
+          kaynak: "uzanti-dogrudan", kategori: KATEGORI,
           kartlar: paket.kartlar, html: paket.html, ozet: paket.ozet
         })
-      });
+      }, 20000);
       if (r.ok) {
         return { ok: true, yol: "dogrudan",
                  cevap: (await r.text()).slice(0, 120) };
@@ -286,6 +308,13 @@
           ozet: { tur: sayac, sayfada: kartlar.length, yeni: yeni.length,
                   gizli: gizli, tetik: kaynak || "?",
                   varyant: dny.varyant,
+                  // 08.10.2026 — KATEGORI: ayni uzanti hem otomobil hem
+                  // PC bileseni listesini izliyor. Sunucu buna gore
+                  // yonlendiriyor: otomobil -> oto DB + kelepir kopru,
+                  // pc -> apex_predator'un KelepirMotor'u. Her kategori
+                  // KENDI sekmesinde kendi dongusuyle dondugu icin
+                  // mevcut tempo (50-80 sn) hicbir kategoride dusmez.
+                  kategori: KATEGORI,
                   url: location.pathname + location.search,
                   // 08.10.2026 TESHIS: bazi turlarda 51 kartin 51'i de
                   // "yeni" cikti, oysa olculen hiz dakikada ~3.7. Ya
@@ -318,6 +347,15 @@
   }
 
   function zamanla() {
+    // SIKISMA KURTARMA: "calisiyor" bayragi takili kalirsa toplayici
+    // KALICI olarak susar — 08.10.2026'da tam bu oldu (14:59'da durdu,
+    // sekme ve sayfa saglamdi). Zaman asimlari artik bunu onluyor ama
+    // ikinci bir emniyet olarak bir tur 3 dakikayi gecerse bayrak
+    // ZORLA birakilir. Sessiz kalici durus kabul edilemez.
+    if (calisiyor && Date.now() - sonTurAn > 180000) {
+      log("UYARI: tur", sayac, "sikismis — bayrak zorla birakildi");
+      calisiyor = false;
+    }
     // Sekme arkadaysa daha seyrek, ama DURMAZ (gun boyu kosu icin sart).
     // Bant artik sunucudan geliyor (ayar.json); sunucu kapaliysa
     // asagidaki sabitler yedek.

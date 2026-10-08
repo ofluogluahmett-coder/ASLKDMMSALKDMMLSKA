@@ -1,29 +1,25 @@
 {
   "_aciklama": "Uzantinin CANLI ayarlari. content.js her turda /ayar'dan okur, yani burayi degistirmek icin uzantiyi yeniden yuklemek GEREKMEZ. Bir gun icinde alti kez 'uzantiyi yenile' demek zorunda kaldiktan sonra eklendi (08.10.2026).",
-
   "bekci_yenileme": true,
   "_bekci_yenileme": "false yapilirsa bekci sekmeyi ASLA yenilemez. 08.10.2026'da bekcinin hatali bir yenilemesi PX blogu uretti; bu anahtar gerektiginde kullaniciya hic dokundurmadan susturmak icin var. Bekci ayrica artik sadece SUNUCU sessizlik dogrularsa ve saatte en fazla bir kez yeniliyor.",
-
   "durdur": false,
   "_durdur": "true yapilirsa toplayici tur atmayi birakir (tarayiciya dokunmadan durdurma).",
-
   "aralik_min_sn": 50,
   "aralik_max_sn": 80,
   "_aralik": "Iki tur arasi rastgele bant. Olculen guvenli bant 56-80 sn. Not: arka plandaki sekmede tarayici zamanlayicilari dakikada bire kisiyor, bu yuzden gercek ara 60-120 sn cikabilir; tempoyu servis calisaninin alarmi da destekliyor.",
-
   "varyant_mod": "cachebust",
   "_varyant_mod": "duz = adres oldugu gibi | cachebust = adrese _=<ms> eklenir | ab = turlar donusumlu (deney). sahibinden jQuery kullaniyor ve '_' jQuery'nin kendi cache:false parametresi, yani sitenin kendi istek bicimi.",
-  "_deney_sonucu": "08.10.2026 A/B SONUCU — cachebust KIRIYOR. Turlar donusumlu kosuldu (piyasa hizi iki varyant icin ayni), tur basina TAZE ilan: cachebust 20.8, duz 0.8 -> 26 KAT. Patlama araligi 5.5 dk'dan 2.0 dk'ya indi. Bu yuzden mod kalici olarak cachebust yapildi. Not: olcut 'icerik degisti mi' DEGIL 'kac TAZE ilan geldi' olmali; ilk olcutle iki varyant da %100 cikiyordu cunku iki onbellek dugumu arasinda salinirken icerik her turda degisiyor.",
-
-  "ofsetler": [0],
+  "_deney_sonucu": "08.10.2026 A/B SONUCU â€” cachebust KIRIYOR. Turlar donusumlu kosuldu (piyasa hizi iki varyant icin ayni), tur basina TAZE ilan: cachebust 20.8, duz 0.8 -> 26 KAT. Patlama araligi 5.5 dk'dan 2.0 dk'ya indi. Bu yuzden mod kalici olarak cachebust yapildi. Not: olcut 'icerik degisti mi' DEGIL 'kac TAZE ilan geldi' olmali; ilk olcutle iki varyant da %100 cikiyordu cunku iki onbellek dugumu arasinda salinirken icerik her turda degisiyor.",
+  "ofsetler": [
+    0
+  ],
   "_ofsetler": "Izlenecek sayfa ofsetleri, donusumlu. [0] = sadece birinci sayfa. [0,50] = birinci + ikinci sayfa (100 ilanlik pencere). Sitenin kendi sayfalama linki: /otomobil?pagingOffset=50&pagingSize=50&sorting=date_desc. OLCUM: 50 slotluk birinci sayfa ~1 dakikada tamamen devriliyor, bu yuzden derinlik kaybi onlemek icin onemli.",
-
+  "pc_tg_tavan": 5,
+  "_pc_tg_tavan": "PC bileseni scraper kanalina bir turda en fazla kac yeni ilan dusecek.",
   "tg_foto": true,
   "_tg_foto": "false yapilirsa ilanlar fotosuz (metin) gider. OLCUM: fotolu gonderim mesaj basina medyan 6 sn / ortalama 11 sn -> kapasite dakikada ~5.5 mesaj; darbogaz Telegram'in gorseli sahibinden'den CEKMESI. Kuyruk sismeye baslarsa bunu kapat: kapasite kat kat artar. Bayat fotolu ilan yerine taze metin tercih edilir.",
-
   "tg_tur_tavan": 3,
-  "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu — sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim hizi dakikada ~6, uretim ise ~12. Uretim gonderimi gectigi surece ilanlar BAYAT duser ve tazelik kazancimiz cope gider. 3 = dakikada ~3 mesaj, gonderim kapasitesinin altinda. Kalici cozum kelepir skorlamasi (saatte 5-19 ilan).",
-
+  "_tg_tur_tavan": "Bir turda kanala en fazla kac ilan dusecek. OLCUM (08.10.2026): tavan 12 iken kuyrukta 411 mesaj birikti ve kanal 14 DAKIKA geriye dustu â€” sendPhoto fotoyu Telegram'a cektirdigi icin gercek gonderim hizi dakikada ~6, uretim ise ~12. Uretim gonderimi gectigi surece ilanlar BAYAT duser ve tazelik kazancimiz cope gider. 3 = dakikada ~3 mesaj, gonderim kapasitesinin altinda. Kalici cozum kelepir skorlamasi (saatte 5-19 ilan).",
   "sayfa_boyu": 50,
   "_sayfa_boyu": "Sitenin kendi sunduklari: 20 ve 50."
 }

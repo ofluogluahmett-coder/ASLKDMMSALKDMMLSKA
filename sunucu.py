@@ -90,6 +90,28 @@ except Exception as _e:
     oto_tg = None
     print(f"  [tg] modul yuklenemedi: {str(_e)[:100]}")
 
+# ── PC BILESENI KOPRUSU (08.10.2026) ─────────────────────────────────
+# Ayni uzanti artik PC bileseni listesini de izliyor. O kategorinin
+# verisi apex_predator'un KANITLANMIS motoruna gider (kelepir_hafiza.db)
+# ve kelepir_avci.py zaten o DB'yi izledigi icin FIRSAT/VURGUN
+# bildirimleri KENDILIGINDEN calisir. Boylece PC botunun WebDriver'i ve
+# onunla gelen CF/PX derdi ortadan kalkar.
+_pc_kopru = None
+
+
+def pc_kopru():
+    global _pc_kopru
+    if _pc_kopru is not None:
+        return _pc_kopru
+    try:
+        import pc_kopru
+        _pc_kopru = pc_kopru
+        print("  [pc] PC bileseni koprusu AKTIF (apex KelepirMotor)")
+    except Exception as e:
+        _pc_kopru = False
+        print(f"  [pc] kopru yuklenemedi: {str(e)[:120]}")
+    return _pc_kopru
+
 # ID SU SEVIYESI — doping ayrimi. sahibinden'de eski ilanlar tarihi
 # tazelenip basa donuyor ve gorsel bir isaret YOK; ama ilan ID'leri
 # global ve artan. ID'si su seviyesinden buyuk olan GERCEKTEN yeni.
@@ -487,6 +509,28 @@ class Isleyici(BaseHTTPRequestHandler):
                     ek = {"hafiza_ilan": n, "hafiza_skorlanabilir": skor}
                 except Exception:
                     pass
+            # ── BEKCI FRENI ─────────────────────────────────────────
+            # Uzantidaki ESKI bekci kodu kararini bu uctaki
+            # "son_gorulme"ye gore veriyor ve ayar.json'u okumuyor.
+            # PX bloguna girdigimizde o kod sayfayi bes dakikada bir
+            # yeniden yuklemeye calisti — challenge ekraninda yenileme
+            # HICBIR ISE YARAMAZ (PX kendi gecmiyor, olculdu) ve blogu
+            # derinlestirir. Fren acikken bu uc "sayfa az once
+            # goruldu" der, boylece eski kod da susar. Gercek deger
+            # "son_gorulme_gercek" alaninda; panel ve izleyici onu
+            # kullanir, yani olcum KORUNUR.
+            fren = False
+            try:
+                _ay = json.loads(
+                    (ROOT / "ayar.json").read_text(encoding="utf-8"))
+                fren = _ay.get("bekci_yenileme") is False
+            except Exception:
+                pass
+            if fren:
+                ek["son_gorulme_gercek"] = _sayac.get("son_gorulme")
+                ek["bekci_frenlendi"] = True
+                ek["son_gorulme"] = datetime.now().isoformat(
+                    timespec="seconds")
             if oto_tg is not None:
                 ek["telegram"] = oto_tg.durum()
             ek["su_seviyesi"] = _su_seviyesi
@@ -566,8 +610,45 @@ class Isleyici(BaseHTTPRequestHandler):
                   f"{type(e).__name__}: {str(e)[:90]}")
             self._cevap(400, f"bozuk istek: {str(e)[:80]}")
             return
-        yeni, guncel = ilan_yaz(kartlar, veri.get("kaynak") or "uzanti")
         ozet = veri.get("ozet") or {}
+
+        # ── KATEGORI YONLENDIRME ────────────────────────────────────
+        # PC bileseni verisi otomobil DB'sine KARISMAZ; dogrudan
+        # apex_predator'un motoruna gider.
+        kat = (veri.get("kategori") or ozet.get("kategori")
+               or ("pc" if "masaustu-donanim" in str(ozet.get("url", ""))
+                   else "otomobil"))
+        if kat == "pc":
+            ham_pc = veri.get("html") or ""
+            k = pc_kopru()
+            if not k:
+                self._cevap(200, "pc koprusu kapali")
+                return
+            try:
+                with _kopru_kilit:
+                    tavan = 5
+                    try:
+                        _a = json.loads((ROOT / "ayar.json")
+                                        .read_text(encoding="utf-8"))
+                        tavan = int(_a.get("pc_tg_tavan") or 5)
+                    except Exception:
+                        pass
+                    yazilan, yeni_s, toplam = k.html_isle(ham_pc, tavan)
+            except Exception as e:
+                print(f"  [pc hatasi] {str(e)[:120]}")
+                self._cevap(500, "pc isleme hatasi")
+                return
+            _sayac["pc_istek"] = _sayac.get("pc_istek", 0) + 1
+            _sayac["pc_yazilan"] = _sayac.get("pc_yazilan", 0) + yazilan
+            _sayac["pc_son_gorulme"] = datetime.now().isoformat(
+                timespec="seconds")
+            print(f"{datetime.now():%H:%M:%S}  [PC] tur="
+                  f"{ozet.get('tur', '?'):>4}  sayfada={toplam:3}  "
+                  f"yeni={yeni_s:3}  DB'ye yazilan={yazilan:3}")
+            self._cevap(200, f"pc yeni={yeni_s} yazilan={yazilan}")
+            return
+
+        yeni, guncel = ilan_yaz(kartlar, veri.get("kaynak") or "uzanti")
         if ozet.get("challenge"):
             # Sayfa challenge ekraninda. PX kendiliginden GECMIYOR
             # (olculdu, kullanici teyit etti) -> elle gecilmesi gerekir.
