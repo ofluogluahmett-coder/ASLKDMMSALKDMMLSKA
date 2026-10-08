@@ -1,7 +1,74 @@
 # OTO KELEPİR AVCISI — Proje Rehberi
 
-**Son güncelleme:** 08.10.2026 (akşam) — PC kategorisi de uzantıya taşındı; 2FA duvarı dersi: yük TEK oturuma yığılmamalı, oturumlar ANONİM olmalı.
+**Son güncelleme:** 08.10.2026 (18:20) — KÜMÜLATİF IP HACİM TAVANI bulundu: duvarlar oturum düzeyinde başlıyor ama yeterli hacimde yeni oturumlar da duvarlanıyor.
 **Ortaklar:** Ahmet (geliştirme + saha) · Adnan (saha + dağıtım ağı)
+
+---
+
+## 08.10.2026 (18:20) — ⛔ KÜMÜLATİF IP HACİM TAVANI
+
+### Sabahki çıkarımım YANLIŞ değil ama EKSİKTİ
+
+Sabah şöyle demiştim: *"duvarlar OTURUM düzeyinde, IP düzeyinde DEĞİL"*.
+Kanıtım sağlamdı — kullanıcının oturumu 2FA duvarındayken PC botu AYNI
+IP'den sorunsuz tarıyordu (ve dün gece tersi: uzantı 305 ilan toplarken
+bot aynı IP'den bloklanıyordu).
+
+**Ama günün sonunda İKİ oturum da duvarlandı:**
+
+| Oturum | Duvar | Saat |
+|---|---|---|
+| otomobil (temiz profil, uzantı) | PX `Access to this page has been denied` | 18:08 |
+| PC botu (kendi geçici profili, anonim) | **giriş duvarı** (`sahibinden.com Giriş`) | 18:19, tur 155 |
+
+**Doğru ifade:** duvarlar BAŞLANGIÇTA oturum düzeyinde, ama kümülatif IP
+hacmi yeterince yükselince site YENİ oturumları da duvarlıyor. Bir tavan
+var ve 08.10'da ona çarptık.
+
+### Tavana neden çarptık (hacim hesabı)
+
+```
+otomobil toplayici : ~55 sn'de bir, HER istek cachebust (origin'e gidiyor)
+PC botu            : ~55 sn'de bir + konsol taramalari
+bir ara            : ayni oturumda UC sekme birden (15:08-15:34)
+toplam             : tek IP'den gun boyu surekli origin yuku
+```
+
+Cachebust'in bedeli buydu: onbellegi atlamak = her istek origin'e. 13:00
+notunda "izlenecek risk" diye yazmistim ama **hacmi dengelemeyi
+düşünmedim**. Tazelik kazanci gercek (26 kat), bedeli de gercek.
+
+### PC botunun davranışı DOĞRU çalıştı
+
+Bot challenge'ı görünce CF-HOLD moduna geçti: **istek atmayı bıraktı** ve
+bekledi (`[TUR 156] [CF] bekleniyor (istek atmiyorum)`). Blogu
+derinleştirmedi. Bu tasarım iyi; sadece giriş duvarını "CF" diye
+etiketliyor (sıfır ilan + gövdede "robot" eşleşmesi) — teşhis için
+yanıltıcı, ayrı etiket hak ediyor.
+
+### Yarın için ölçülecek üç ayar (BİRİ BİR GÜN — birden değil)
+
+1. **Cachebust'ı seyrelt** — her tur değil, iki turda bir. Tazeliğin
+   çoğunu korur, origin yükünü yarıya indirir.
+2. **Tek oturum** — otomobil ve PC'yi aynı anda değil dönüşümlü; ya da
+   PC'yi uzantı köprüsüne alıp tek tarayıcıda topla (kod hazır,
+   `pc_kopru.py`).
+3. **Tur aralığını aç** — 50-80 sn yerine 80-120 sn. Önbellek penceresi
+   5,5 dk olduğu için 80-120 hâlâ onun çok altında.
+
+**Yöntem kuralı:** bugün üç değişkeni birden oynattım ve üç kez duvara
+çarptım (bekçi kaynaklı PX, 2FA duvarı, soğuk giriş PX'i). Bundan sonra
+bir değişken, bir gün ölçüm.
+
+### Gün sonu durumu
+
+| Parça | Durum |
+|---|---|
+| letgo botu | ✅ çalışıyor (farklı site, etkilenmedi) |
+| `kelepir_avci.py` | ✅ çalışıyor |
+| sahibinden otomobil + PC | ⛔ durduruldu, oturumlar dinleniyor |
+| Toplanan (otomobil) | 29.460 ilan, 2.289'u bugün |
+| Toplanan (PC/konsol) | 369.858 kayıt, bugün 208 |
 
 ---
 
